@@ -58,4 +58,4 @@ $userData = [
 
 $_SESSION['user'] = $userData;
 
-successResponse('登入成功', ['user' => $userData]);
+successResponse('登入成功', ['user' => $userData, 'session_id' => session_id()]);

@@ -20,7 +20,10 @@ async function request(path, options = {}) {
 
     const defaults = {
         credentials: 'include',
-        headers: { 'Content-Type': 'application/json' },
+        headers: {
+            'Content-Type': 'application/json',
+            'X-Session-ID': sessionStorage.getItem('_sid') || '',
+        },
     };
 
     const config = {

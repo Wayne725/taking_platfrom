@@ -67,7 +67,10 @@
         submitBtn.textContent = '登入中...';
 
         try {
-            await Auth.login({ email, password });
+            const res = await Auth.login({ email, password });
+            if (res.data?.session_id) {
+                sessionStorage.setItem('_sid', res.data.session_id);
+            }
             window.location.href = 'index.html';
         } catch (err) {
             showMessage('msg', err.message || '登入失敗，請稍後再試');

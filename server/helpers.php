@@ -5,14 +5,19 @@ require_once __DIR__ . '/config.php';
 function startAppSession(): void {
     if (session_status() === PHP_SESSION_NONE) {
         session_name(SESSION_NAME);
-        $isHttps = (!empty($_SERVER['HTTPS']) && $_SERVER['HTTPS'] !== 'off')
-                   || (($_SERVER['SERVER_PORT'] ?? 80) == 443);
+
+        // 支援從 Header 傳入 Session ID（跨站 Cookie 被瀏覽器擋時的替代方案）
+        $headerSid = $_SERVER['HTTP_X_SESSION_ID'] ?? '';
+        if ($headerSid && preg_match('/^[a-zA-Z0-9,\-]{22,256}$/', $headerSid)) {
+            session_id($headerSid);
+        }
+
         session_set_cookie_params([
             'lifetime' => SESSION_LIFETIME,
             'path'     => '/',
             'secure'   => true,
             'httponly' => true,
-            'samesite' => 'None',  // 跨站請求必須用 None + secure
+            'samesite' => 'None',
         ]);
         session_start();
     }
