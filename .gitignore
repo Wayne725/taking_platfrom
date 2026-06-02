@@ -1,4 +1,3 @@
 .DS_Store
 .vscode/
 *.log
-server/config.php

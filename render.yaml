@@ -1,7 +1,6 @@
 services:
   - type: web
     name: taking-platform-api
-    runtime: other
-    buildCommand: ""
-    startCommand: php -S 0.0.0.0:$PORT -t server
+    runtime: docker
+    dockerfilePath: ./Dockerfile
     region: singapore
