@@ -6,7 +6,7 @@
 // 本地開發用相對路徑；線上自動改成你的 InfinityFree 後端網址
 const API_BASE = (window.location.hostname === 'localhost' || window.location.hostname === '127.0.0.1')
     ? '../server/api_entry.php'
-    : 'https://wayne-tasks.freepage.cc/server/api_entry.php';
+    : 'https://wayne.rf.gd/server/api_entry.php';
 
 /**
  * Low-level request helper.
