@@ -10,9 +10,9 @@ function startAppSession(): void {
         session_set_cookie_params([
             'lifetime' => SESSION_LIFETIME,
             'path'     => '/',
-            'secure'   => $isHttps,
+            'secure'   => true,
             'httponly' => true,
-            'samesite' => 'Lax',
+            'samesite' => 'None',  // 跨站請求必須用 None + secure
         ]);
         session_start();
     }
@@ -20,6 +20,7 @@ function startAppSession(): void {
 
 // ── Response helpers ───────────────────────────────────────────────────────────
 function jsonResponse(string $status, string $message, mixed $data = null, int $httpCode = 200): never {
+    if (ob_get_level() > 0) ob_end_clean(); // 清除任何前置注入的輸出
     http_response_code($httpCode);
     header('Content-Type: application/json; charset=utf-8');
     echo json_encode([
