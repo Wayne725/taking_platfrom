@@ -1,0 +1,14 @@
+RewriteEngine On
+
+# Block direct HTTP access to internal files (config, db, helpers)
+<FilesMatch "^(config|db|helpers)\.php$">
+    Require all denied
+</FilesMatch>
+
+# Block direct HTTP access to api/ handler files (they are internal includes only)
+RewriteRule ^api/ - [F,L]
+
+# Route everything else to router.php
+RewriteCond %{REQUEST_FILENAME} !-f
+RewriteCond %{REQUEST_FILENAME} !-d
+RewriteRule ^ router.php [QSA,L]

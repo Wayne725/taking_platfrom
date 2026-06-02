@@ -1,0 +1,137 @@
+<!DOCTYPE html>
+<html lang="zh-TW">
+<head>
+    <meta charset="UTF-8">
+    <script src="js/theme.js"></script>
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>發布任務 - 接案平台</title>
+    <link rel="stylesheet" href="css/style.css">
+</head>
+<body>
+
+<div id="nav-container"></div>
+
+<div class="container page-wrapper">
+    <div style="margin-bottom:1rem">
+        <a href="index.html" class="btn btn-outline btn-sm">← 返回列表</a>
+    </div>
+
+    <div class="card" style="max-width:640px;margin:0 auto">
+        <h2 style="font-size:1.4rem;font-weight:700;margin-bottom:1.5rem;color:var(--accent)">發布新任務</h2>
+
+        <div id="msg" class="message"></div>
+
+        <form id="createForm" novalidate>
+            <div class="form-group">
+                <label for="title">任務標題 <span style="color:#ff9999">*</span></label>
+                <input type="text" id="title" class="form-control"
+                       placeholder="請輸入清楚的任務標題" required maxlength="255">
+            </div>
+
+            <div class="form-group">
+                <label for="description">任務描述 <span style="color:#ff9999">*</span></label>
+                <textarea id="description" class="form-control"
+                          placeholder="詳細描述任務內容、需求規格、交付物等..." required
+                          style="min-height:150px"></textarea>
+            </div>
+
+            <div style="display:grid;grid-template-columns:1fr 1fr;gap:1rem">
+                <div class="form-group">
+                    <label for="budget">預算 (NT$) <span style="color:#ff9999">*</span></label>
+                    <input type="number" id="budget" class="form-control"
+                           placeholder="0" min="0" step="100" required>
+                </div>
+                <div class="form-group">
+                    <label for="deadline">截止日期 <span style="color:#ff9999">*</span></label>
+                    <input type="date" id="deadline" class="form-control" required>
+                </div>
+            </div>
+
+            <div class="form-group">
+                <label for="category">任務分類</label>
+                <select id="category" class="form-control">
+                    <option value="設計">設計</option>
+                    <option value="開發">開發</option>
+                    <option value="文案">文案</option>
+                    <option value="行銷">行銷</option>
+                    <option value="其他">其他</option>
+                </select>
+            </div>
+
+            <div style="display:flex;gap:.75rem;margin-top:.5rem">
+                <a href="index.html" class="btn btn-secondary" style="flex:1;text-align:center">取消</a>
+                <button type="submit" id="submitBtn" class="btn btn-primary" style="flex:2">發布任務</button>
+            </div>
+        </form>
+    </div>
+</div>
+
+<script src="js/api.js"></script>
+<script src="js/auth.js"></script>
+<script src="js/utils.js"></script>
+<script>
+async function init() {
+    const user = await requireLogin();
+    if (!user) return;
+    renderNavBar('nav-container', user);
+
+    // Set minimum date to today
+    const today = new Date().toISOString().split('T')[0];
+    document.getElementById('deadline').min = today;
+
+    const form      = document.getElementById('createForm');
+    const submitBtn = document.getElementById('submitBtn');
+
+    form.addEventListener('submit', async (e) => {
+        e.preventDefault();
+        hideMessage('msg');
+
+        const title       = document.getElementById('title').value.trim();
+        const description = document.getElementById('description').value.trim();
+        const budget      = document.getElementById('budget').value;
+        const deadline    = document.getElementById('deadline').value;
+        const category    = document.getElementById('category').value;
+
+        if (!title || !description || budget === '' || !deadline) {
+            showMessage('msg', '請填寫所有必填欄位');
+            return;
+        }
+
+        if (parseFloat(budget) < 0) {
+            showMessage('msg', '預算不可為負數');
+            return;
+        }
+
+        const today = new Date();
+        today.setHours(0, 0, 0, 0);
+        const deadlineDate = new Date(deadline);
+        if (deadlineDate < today) {
+            showMessage('msg', '截止日期不可為過去');
+            return;
+        }
+
+        submitBtn.disabled = true;
+        submitBtn.textContent = '發布中...';
+
+        try {
+            const res = await Tasks.create({
+                title, description,
+                budget: parseFloat(budget),
+                deadline, category
+            });
+            showMessage('msg', '任務發布成功！即將跳轉...', 'success');
+            setTimeout(() => {
+                window.location.href = `task-detail.html?id=${res.data.task.id}`;
+            }, 1200);
+        } catch (err) {
+            showMessage('msg', err.message || '發布失敗，請稍後再試');
+            submitBtn.disabled = false;
+            submitBtn.textContent = '發布任務';
+        }
+    });
+}
+
+init();
+</script>
+</body>
+</html>

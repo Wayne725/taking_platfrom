@@ -1,0 +1,244 @@
+<!DOCTYPE html>
+<html lang="zh-TW">
+<head>
+    <meta charset="UTF-8">
+    <script src="js/theme.js"></script>
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>我的儀表板 - 接案平台</title>
+    <link rel="stylesheet" href="css/style.css">
+</head>
+<body>
+
+<div id="nav-container"></div>
+
+<div class="container page-wrapper">
+    <div class="page-header">
+        <h1 class="page-title">我的儀表板</h1>
+        <a href="task-create.html" class="btn btn-primary">+ 發布新任務</a>
+    </div>
+
+    <div id="msg" class="message"></div>
+
+    <!-- Stats -->
+    <div id="statsGrid" class="stats-grid">
+        <div class="loading-state" style="grid-column:1/-1">載入中...</div>
+    </div>
+
+    <!-- Tabs -->
+    <div class="tabs">
+        <button class="tab-btn active" data-tab="posted">我發布的</button>
+        <button class="tab-btn" data-tab="working">我接的</button>
+    </div>
+
+    <div id="tab-posted" class="tab-panel active">
+        <div class="loading-state">載入中...</div>
+    </div>
+    <div id="tab-working" class="tab-panel">
+        <div class="loading-state">載入中...</div>
+    </div>
+</div>
+
+<script src="js/api.js"></script>
+<script src="js/auth.js"></script>
+<script src="js/utils.js"></script>
+<script>
+let currentUser = null;
+
+async function init() {
+    currentUser = await requireLogin();
+    if (!currentUser) return;
+    renderNavBar('nav-container', currentUser);
+    await loadDashboard();
+}
+
+async function loadDashboard() {
+    try {
+        // Load all tasks (no pagination limit for dashboard — use a high limit)
+        const res   = await Tasks.list({ limit: 200 });
+        const tasks = res.data.tasks;
+
+        const myPosted  = tasks.filter(t => t.client_id === currentUser.id);
+        const myWorking = tasks.filter(t => t.assigned_worker_id === currentUser.id);
+
+        renderStats(myPosted, myWorking);
+        renderPostedTasks(myPosted);
+        renderWorkingTasks(myWorking);
+    } catch (err) {
+        showMessage('msg', err.message || '載入失敗');
+    }
+}
+
+function renderStats(posted, working) {
+    const statsGrid = document.getElementById('statsGrid');
+    statsGrid.innerHTML = '';
+
+    const statusCount = (arr, status) => arr.filter(t => t.status === status).length;
+    const completedWorking = working.filter(t => t.status === 'completed');
+    const totalIncome = completedWorking.reduce((sum, t) => sum + t.budget, 0);
+
+    const stats = [
+        { number: posted.length,                       label: '已發布任務數',  cls: '' },
+        { number: statusCount(posted, 'in_progress') + statusCount(working, 'in_progress'),
+                                                        label: '進行中任務數',  cls: '' },
+        { number: statusCount(posted, 'completed'),    label: '已完成任務數',  cls: '' },
+        { number: 'NT$ ' + Number(totalIncome).toLocaleString('zh-TW'),
+                                                        label: '接案收入合計',  cls: 'stat-income' },
+    ];
+
+    stats.forEach(({ number, label, cls }) => {
+        const card = document.createElement('div');
+        card.className = 'stat-card' + (cls ? ' ' + cls : '');
+        const num = document.createElement('div');
+        num.className = 'stat-number';
+        num.textContent = number;
+        const lbl = document.createElement('div');
+        lbl.className = 'stat-label';
+        lbl.textContent = label;
+        card.appendChild(num);
+        card.appendChild(lbl);
+        statsGrid.appendChild(card);
+    });
+}
+
+function renderPostedTasks(tasks) {
+    const panel = document.getElementById('tab-posted');
+    panel.innerHTML = '';
+
+    if (tasks.length === 0) {
+        panel.innerHTML = `
+            <div class="empty-state">
+                <div class="empty-state-text">您尚未發布任何任務</div>
+                <br><a href="task-create.html" class="btn btn-primary btn-sm">立即發布</a>
+            </div>`;
+        return;
+    }
+
+    const grid = document.createElement('div');
+    grid.className = 'task-grid';
+    tasks.forEach(task => grid.appendChild(buildDashboardCard(task, 'posted')));
+    panel.appendChild(grid);
+}
+
+function renderWorkingTasks(tasks) {
+    const panel = document.getElementById('tab-working');
+    panel.innerHTML = '';
+
+    if (tasks.length === 0) {
+        panel.innerHTML = `
+            <div class="empty-state">
+                <div class="empty-state-text">您目前沒有承接中的任務</div>
+                <br><a href="index.html" class="btn btn-primary btn-sm">瀏覽任務</a>
+            </div>`;
+        return;
+    }
+
+    const grid = document.createElement('div');
+    grid.className = 'task-grid';
+    tasks.forEach(task => grid.appendChild(buildDashboardCard(task, 'working')));
+    panel.appendChild(grid);
+}
+
+function quickActionLabel(task, type) {
+    if (type === 'posted') {
+        if (task.status === 'open') return { label: '管理申請', cls: 'btn-outline' };
+        if (task.status === 'completed_pending_confirmation') return { label: '確認完成', cls: 'btn-success' };
+    }
+    if (type === 'working') {
+        if (task.status === 'assigned') return { label: '開始執行', cls: 'btn-warning' };
+        if (task.status === 'in_progress') return { label: '標記完成', cls: 'btn-success' };
+    }
+    return null;
+}
+
+function buildDashboardCard(task, type) {
+    const card = document.createElement('div');
+    card.className = 'task-card';
+    card.style.display = 'block';
+    card.style.cursor = 'pointer';
+    card.addEventListener('click', (e) => {
+        if (e.target.tagName !== 'BUTTON') {
+            window.location.href = `task-detail.html?id=${task.id}`;
+        }
+    });
+
+    // Header
+    const header = document.createElement('div');
+    header.className = 'task-card-header';
+
+    const title = document.createElement('div');
+    title.className = 'task-card-title';
+    title.textContent = task.title;
+
+    const badge = document.createElement('span');
+    badge.className = statusClass(task.status);
+    badge.textContent = statusLabel(task.status);
+
+    header.appendChild(title);
+    header.appendChild(badge);
+
+    const desc = document.createElement('div');
+    desc.className = 'task-card-desc';
+    desc.textContent = task.description;
+
+    const meta = document.createElement('div');
+    meta.className = 'task-card-meta';
+
+    const items = [
+        { cls: 'meta-budget',   text: formatBudget(task.budget) },
+        { cls: 'meta-deadline', text: formatDate(task.deadline) },
+        { cls: 'meta-category', text: task.category },
+    ];
+
+    if (type === 'posted') {
+        items.push({ cls: 'meta-applicants', text: `${task.applicant_count} 人申請` });
+        if (task.assigned_worker_name) {
+            items.push({ cls: 'meta-creator', text: `接案者：${task.assigned_worker_name}` });
+        }
+    } else {
+        items.push({ cls: 'meta-creator', text: `發案者：${task.client_name}` });
+    }
+
+    items.forEach(({ cls, text }) => {
+        const span = document.createElement('span');
+        span.className = cls;
+        span.textContent = text;
+        meta.appendChild(span);
+    });
+
+    card.appendChild(header);
+    card.appendChild(desc);
+    card.appendChild(meta);
+
+    // Quick action button
+    const action = quickActionLabel(task, type);
+    if (action) {
+        const actionRow = document.createElement('div');
+        actionRow.className = 'task-card-action';
+        const btn = document.createElement('button');
+        btn.className = `btn btn-sm ${action.cls}`;
+        btn.textContent = action.label;
+        btn.addEventListener('click', (e) => {
+            e.stopPropagation();
+            window.location.href = `task-detail.html?id=${task.id}`;
+        });
+        actionRow.appendChild(btn);
+        card.appendChild(actionRow);
+    }
+
+    return card;
+}
+
+// Tabs
+document.querySelectorAll('.tab-btn').forEach(btn => {
+    btn.addEventListener('click', () => {
+        document.querySelectorAll('.tab-btn').forEach(b => b.classList.remove('active'));
+        document.querySelectorAll('.tab-panel').forEach(p => p.classList.remove('active'));
+        btn.classList.add('active');
+        document.getElementById(`tab-${btn.dataset.tab}`).classList.add('active');
+    });
+});
+
+init();
+</script>
+</body>
+</html>

@@ -1,0 +1,402 @@
+<!DOCTYPE html>
+<html lang="zh-TW">
+<head>
+    <meta charset="UTF-8">
+    <script src="js/theme.js"></script>
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>我的資料 - 接案平台</title>
+    <link rel="stylesheet" href="css/style.css">
+</head>
+<body>
+
+<div id="nav-container"></div>
+
+<div class="container page-wrapper">
+    <div class="page-header">
+        <h1 class="page-title">我的資料</h1>
+    </div>
+
+    <div id="msg" class="message"></div>
+
+    <div class="profile-layout" id="profileLayout" style="display:none">
+
+        <!-- Left: Profile card -->
+        <div>
+            <div class="profile-card" id="profileCard">
+                <div class="profile-avatar" id="profileAvatar"></div>
+                <div class="profile-username" id="profileUsername"></div>
+                <div class="profile-role-badge" id="profileRoleBadge"></div>
+
+                <div id="profileMetaList"></div>
+
+                <div class="profile-stats-grid" id="profileStatsGrid"></div>
+
+                <div id="profileBio"></div>
+            </div>
+        </div>
+
+        <!-- Right: Forms -->
+        <div class="profile-main">
+
+            <!-- Bio -->
+            <div class="profile-section-card">
+                <div class="profile-section-title">個人簡介 / 經歷</div>
+                <div id="bioMsg" class="message"></div>
+                <form id="bioForm" novalidate>
+                    <div class="form-group">
+                        <textarea id="bioInput" class="form-control" rows="5"
+                                  placeholder="介紹你自己、你的技能與工作經歷..." maxlength="1000"></textarea>
+                        <div style="font-size:.75rem;color:var(--text-muted);margin-top:.3rem;text-align:right">
+                            <span id="bioCharCount">0</span> / 1000
+                        </div>
+                    </div>
+                    <button type="submit" id="bioSubmitBtn" class="btn btn-primary">儲存簡介</button>
+                </form>
+            </div>
+
+            <!-- Reviews received -->
+            <div class="profile-section-card">
+                <div class="profile-section-title">收到的評價</div>
+                <div id="reviewsContainer">
+                    <div class="bio-empty">載入中...</div>
+                </div>
+            </div>
+
+            <!-- Change username -->
+            <div class="profile-section-card">
+                <div class="profile-section-title">修改使用者名稱</div>
+                <div id="usernameMsg" class="message"></div>
+                <form id="usernameForm" novalidate>
+                    <div class="form-group">
+                        <label for="newUsername">新使用者名稱</label>
+                        <input type="text" id="newUsername" class="form-control" maxlength="50" required>
+                    </div>
+                    <button type="submit" id="usernameSubmitBtn" class="btn btn-primary">儲存名稱</button>
+                </form>
+            </div>
+
+            <!-- Change password -->
+            <div class="profile-section-card">
+                <div class="profile-section-title">修改密碼</div>
+                <div id="passwordMsg" class="message"></div>
+                <form id="passwordForm" novalidate>
+                    <div class="form-group">
+                        <label for="currentPassword">目前密碼</label>
+                        <input type="password" id="currentPassword" class="form-control" required>
+                    </div>
+                    <div class="form-group">
+                        <label for="newPassword">新密碼</label>
+                        <input type="password" id="newPassword" class="form-control" minlength="6" required>
+                    </div>
+                    <div class="form-group">
+                        <label for="confirmPassword">確認新密碼</label>
+                        <input type="password" id="confirmPassword" class="form-control" required>
+                    </div>
+                    <button type="submit" id="passwordSubmitBtn" class="btn btn-primary">更新密碼</button>
+                </form>
+            </div>
+
+        </div>
+    </div>
+</div>
+
+<script src="js/api.js"></script>
+<script src="js/auth.js"></script>
+<script src="js/utils.js"></script>
+<script>
+let currentUser = null;
+let profileData = null;
+
+async function init() {
+    currentUser = await fetchCurrentUser();
+    const params  = new URLSearchParams(window.location.search);
+    const viewId  = parseInt(params.get('id'), 10);
+    const isOwn   = !viewId || (currentUser && viewId === currentUser.id);
+
+    if (isOwn && !currentUser) {
+        window.location.href = 'login.html';
+        return;
+    }
+
+    if (currentUser) renderNavBar('nav-container', currentUser);
+
+    if (isOwn) {
+        await loadProfile();
+    } else {
+        // Hide edit forms when viewing someone else
+        document.querySelector('.profile-main').style.display = 'none';
+        document.querySelector('.page-header .page-title').textContent = '使用者資料';
+        await loadPublicProfile(viewId);
+    }
+}
+
+async function loadPublicProfile(userId) {
+    try {
+        const res = await Users.get(userId);
+        profileData = res.data;
+        renderProfile(profileData);
+        document.getElementById('profileLayout').style.display = 'grid';
+    } catch (err) {
+        showMessage('msg', err.message || '找不到此用戶');
+    }
+}
+
+async function loadProfile() {
+    try {
+        const res  = await Auth.profile();
+        profileData = res.data;
+        renderProfile(profileData);
+        document.getElementById('profileLayout').style.display = 'grid';
+    } catch (err) {
+        showMessage('msg', err.message || '載入失敗');
+    }
+}
+
+function renderProfile(data) {
+    const user = data.user;
+
+    // Avatar (first letter of username)
+    const avatarEl = document.getElementById('profileAvatar');
+    avatarEl.textContent = (user.username || '?')[0].toUpperCase();
+
+    document.getElementById('profileUsername').textContent = user.username;
+
+    const roleBadge = document.getElementById('profileRoleBadge');
+    roleBadge.textContent = '接案平台會員';
+
+    // Meta list
+    const metaList = document.getElementById('profileMetaList');
+    metaList.innerHTML = '';
+
+    const metaItems = [
+        { icon: '@', text: user.email },
+        { icon: '+', text: '加入於 ' + formatDate(user.created_at) },
+    ];
+
+    metaItems.forEach(({ icon, text }) => {
+        const row = document.createElement('div');
+        row.className = 'profile-meta-item';
+        const iconEl = document.createElement('span');
+        iconEl.textContent = icon;
+        const textEl = document.createElement('span');
+        textEl.textContent = text;
+        row.appendChild(iconEl);
+        row.appendChild(textEl);
+        metaList.appendChild(row);
+    });
+
+    // Stats
+    const statsGrid = document.getElementById('profileStatsGrid');
+    statsGrid.innerHTML = '';
+
+    const ratingStr = data.review_count > 0
+        ? `${data.avg_rating} ★`
+        : '—';
+
+    const statsItems = [
+        { num: data.tasks_posted,    lbl: '發布任務' },
+        { num: data.tasks_completed, lbl: '完成接案' },
+        { num: ratingStr,            lbl: `評分 (${data.review_count} 則)` },
+    ];
+
+    statsItems.forEach(({ num, lbl }) => {
+        const card = document.createElement('div');
+        card.className = 'profile-stat';
+        const numEl = document.createElement('div');
+        numEl.className = 'profile-stat-num';
+        numEl.style.whiteSpace = 'pre-line';
+        numEl.textContent = num;
+        const lblEl = document.createElement('div');
+        lblEl.className = 'profile-stat-lbl';
+        lblEl.textContent = lbl;
+        card.appendChild(numEl);
+        card.appendChild(lblEl);
+        statsGrid.appendChild(card);
+    });
+
+    // Pre-fill username form
+    document.getElementById('newUsername').value = user.username;
+
+    // Bio display (in card)
+    const bioDiv = document.getElementById('profileBio');
+    bioDiv.innerHTML = '';
+    if (user.bio) {
+        const bioText = document.createElement('div');
+        bioText.className = 'bio-text';
+        bioText.textContent = user.bio;
+        bioDiv.appendChild(bioText);
+    } else {
+        const bioEmpty = document.createElement('div');
+        bioEmpty.className = 'bio-empty';
+        bioEmpty.textContent = '尚未填寫個人簡介';
+        bioDiv.appendChild(bioEmpty);
+    }
+
+    // Bio edit textarea (own profile)
+    const bioInput = document.getElementById('bioInput');
+    if (bioInput) {
+        bioInput.value = user.bio || '';
+        document.getElementById('bioCharCount').textContent = bioInput.value.length;
+    }
+
+    // Reviews
+    renderReviews(data.reviews || []);
+}
+
+function renderReviews(reviews) {
+    const container = document.getElementById('reviewsContainer');
+    container.innerHTML = '';
+    if (reviews.length === 0) {
+        const empty = document.createElement('div');
+        empty.className = 'bio-empty';
+        empty.textContent = '還沒有收到評價';
+        container.appendChild(empty);
+        return;
+    }
+    const list = document.createElement('div');
+    list.className = 'review-list';
+    reviews.forEach(r => {
+        const card = document.createElement('div');
+        card.className = 'review-card';
+
+        const header = document.createElement('div');
+        header.className = 'review-header';
+
+        const left = document.createElement('div');
+        const reviewer = document.createElement('div');
+        reviewer.className = 'review-reviewer';
+        reviewer.textContent = escapeHtml(r.reviewer_name);
+        const taskLink = document.createElement('div');
+        taskLink.className = 'review-task';
+        taskLink.textContent = '任務：' + escapeHtml(r.task_title);
+        left.appendChild(reviewer);
+        left.appendChild(taskLink);
+
+        const right = document.createElement('div');
+        right.style.textAlign = 'right';
+        const stars = document.createElement('div');
+        stars.className = 'stars-display';
+        for (let i = 1; i <= 5; i++) {
+            const s = document.createElement('span');
+            s.className = 'star' + (i <= r.rating ? ' filled' : '');
+            s.textContent = '★';
+            stars.appendChild(s);
+        }
+        const date = document.createElement('div');
+        date.className = 'review-date';
+        date.textContent = formatDate(r.created_at);
+        right.appendChild(stars);
+        right.appendChild(date);
+
+        header.appendChild(left);
+        header.appendChild(right);
+        card.appendChild(header);
+
+        if (r.comment) {
+            const comment = document.createElement('div');
+            comment.className = 'review-comment';
+            comment.textContent = r.comment;
+            card.appendChild(comment);
+        }
+        list.appendChild(card);
+    });
+    container.appendChild(list);
+}
+
+// ── Bio char counter ───────────────────────────────────────────────────────────
+document.getElementById('bioInput').addEventListener('input', function () {
+    document.getElementById('bioCharCount').textContent = this.value.length;
+});
+
+// ── Save bio ───────────────────────────────────────────────────────────────────
+document.getElementById('bioForm').addEventListener('submit', async (e) => {
+    e.preventDefault();
+    hideMessage('bioMsg');
+    const bio = document.getElementById('bioInput').value;
+    const btn = document.getElementById('bioSubmitBtn');
+    btn.disabled = true; btn.textContent = '儲存中...';
+    try {
+        await Auth.updateProfile({ bio });
+        showMessage('bioMsg', '個人簡介已更新！', 'success');
+    } catch (err) {
+        showMessage('bioMsg', err.message);
+    } finally {
+        btn.disabled = false; btn.textContent = '儲存簡介';
+    }
+});
+
+// ── Change username ────────────────────────────────────────────────────────────
+document.getElementById('usernameForm').addEventListener('submit', async (e) => {
+    e.preventDefault();
+    hideMessage('usernameMsg');
+
+    const newUsername = document.getElementById('newUsername').value.trim();
+    if (!newUsername) {
+        showMessage('usernameMsg', '請輸入使用者名稱');
+        return;
+    }
+
+    const btn = document.getElementById('usernameSubmitBtn');
+    btn.disabled = true;
+    btn.textContent = '儲存中...';
+
+    try {
+        await Auth.updateProfile({ username: newUsername });
+        showMessage('usernameMsg', '使用者名稱更新成功！', 'success');
+        // Refresh profile data & nav
+        sessionStorage.removeItem('currentUser');
+        currentUser = await fetchCurrentUser();
+        renderNavBar('nav-container', currentUser);
+        await loadProfile();
+    } catch (err) {
+        showMessage('usernameMsg', err.message);
+    } finally {
+        btn.disabled = false;
+        btn.textContent = '儲存名稱';
+    }
+});
+
+// ── Change password ────────────────────────────────────────────────────────────
+document.getElementById('passwordForm').addEventListener('submit', async (e) => {
+    e.preventDefault();
+    hideMessage('passwordMsg');
+
+    const currentPassword  = document.getElementById('currentPassword').value;
+    const newPassword      = document.getElementById('newPassword').value;
+    const confirmPassword  = document.getElementById('confirmPassword').value;
+
+    if (!currentPassword || !newPassword || !confirmPassword) {
+        showMessage('passwordMsg', '請填寫所有欄位');
+        return;
+    }
+
+    if (newPassword.length < 6) {
+        showMessage('passwordMsg', '新密碼至少需要 6 個字元');
+        return;
+    }
+
+    if (newPassword !== confirmPassword) {
+        showMessage('passwordMsg', '新密碼與確認密碼不一致');
+        return;
+    }
+
+    const btn = document.getElementById('passwordSubmitBtn');
+    btn.disabled = true;
+    btn.textContent = '更新中...';
+
+    try {
+        await Auth.updateProfile({ current_password: currentPassword, new_password: newPassword });
+        showMessage('passwordMsg', '密碼更新成功！', 'success');
+        document.getElementById('passwordForm').reset();
+    } catch (err) {
+        showMessage('passwordMsg', err.message);
+    } finally {
+        btn.disabled = false;
+        btn.textContent = '更新密碼';
+    }
+});
+
+init();
+</script>
+</body>
+</html>

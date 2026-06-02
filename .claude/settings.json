@@ -1,0 +1,18 @@
+{
+  "permissions": {
+    "allow": [
+      "Read(//c//**)",
+      "Read(//c/Xampp/**)",
+      "Bash(tasklist.exe)",
+      "Bash(curl -s -o /dev/null -w \"%{http_code}\" \"http://localhost:8080/\")",
+      "Bash(curl -s -X POST \"http://localhost:8080/server/api_entry.php?_path=/auth/register\" -H \"Content-Type: application/json\" -d '{\"\"\"\"username\"\"\"\":\"\"\"\"test\"\"\"\",\"\"\"\"email\"\"\"\":\"\"\"\"test@test.com\"\"\"\",\"\"\"\"password\"\"\"\":\"\"\"\"123456\"\"\"\",\"\"\"\"role\"\"\"\":\"\"\"\"worker\"\"\"\"}')",
+      "Bash(xargs sed:*)",
+      "Bash(curl -s -X POST \"http://localhost:8080/server/api_entry.php?_path=/auth/register\" -H \"Content-Type: application/json\" -d '{\"\"username\"\":\"\"test\"\",\"\"email\"\":\"\"test@test.com\"\",\"\"password\"\":\"\"123456\"\",\"\"role\"\":\"\"worker\"\"}')",
+      "Bash(/c/Xampp/waykj/mysql/bin/mysql.exe -u root -e \"SHOW DATABASES;\")",
+      "Bash(/c/Xampp/waykj/mysql/bin/mysql.exe -u root -e \"USE task_system; SHOW TABLES;\")",
+      "Bash(/c/Xampp/waykj/mysql/bin/mysql.exe -u root --default-character-set=utf8mb4 task_system -e \":*)",
+      "Bash(/c/Xampp/waykj/mysql/bin/mysql.exe -u root --default-character-set=utf8mb4 --host=127.0.0.1 task_system -e \":*)",
+      "Bash(curl -s \"http://localhost:8080/server/api_entry.php?_path=/tasks/1\")"
+    ]
+  }
+}

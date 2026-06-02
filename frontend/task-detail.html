@@ -1,0 +1,686 @@
+<!DOCTYPE html>
+<html lang="zh-TW">
+<head>
+    <meta charset="UTF-8">
+    <script src="js/theme.js"></script>
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>任務詳情 - 接案平台</title>
+    <link rel="stylesheet" href="css/style.css">
+</head>
+<body>
+
+<div id="nav-container"></div>
+
+<div class="container page-wrapper">
+    <div style="margin-bottom:1rem">
+        <a href="index.html" class="btn btn-outline btn-sm">← 返回列表</a>
+    </div>
+
+    <div id="msg" class="message"></div>
+    <div id="taskContent">
+        <div class="loading-state">載入任務資訊中...</div>
+    </div>
+</div>
+
+<!-- Edit Task Modal -->
+<div class="modal-overlay" id="editModal">
+    <div class="modal">
+        <div class="modal-header">
+            <span class="modal-title">修改任務</span>
+            <button class="modal-close" id="closeEditModal">&times;</button>
+        </div>
+        <div id="editMsg" class="message"></div>
+        <form id="editForm" novalidate>
+            <div class="form-group">
+                <label for="editTitle">標題</label>
+                <input type="text" id="editTitle" class="form-control" required>
+            </div>
+            <div class="form-group">
+                <label for="editDescription">描述</label>
+                <textarea id="editDescription" class="form-control" required></textarea>
+            </div>
+            <div class="form-group">
+                <label for="editBudget">預算 (NT$)</label>
+                <input type="number" id="editBudget" class="form-control" min="0" required>
+            </div>
+            <div class="form-group">
+                <label for="editDeadline">截止日期</label>
+                <input type="date" id="editDeadline" class="form-control" required>
+            </div>
+            <div class="form-group">
+                <label for="editCategory">分類</label>
+                <select id="editCategory" class="form-control">
+                    <option value="設計">設計</option>
+                    <option value="開發">開發</option>
+                    <option value="文案">文案</option>
+                    <option value="行銷">行銷</option>
+                    <option value="其他">其他</option>
+                </select>
+            </div>
+            <button type="submit" id="editSubmitBtn" class="btn btn-primary btn-block">儲存修改</button>
+        </form>
+    </div>
+</div>
+
+<!-- Apply Modal -->
+<div class="apply-modal-overlay" id="applyModal">
+    <div class="apply-modal">
+        <div class="apply-modal-title">申請接案</div>
+        <div class="form-group">
+            <label for="applyMessage">申請留言（選填）</label>
+            <textarea id="applyMessage" class="form-control" placeholder="簡述您的相關經驗或想法..."></textarea>
+        </div>
+        <div class="apply-modal-actions">
+            <button id="applyCancel" class="btn btn-outline btn-sm">取消</button>
+            <button id="applyConfirm" class="btn btn-primary btn-sm">確認申請</button>
+        </div>
+    </div>
+</div>
+
+<script src="js/api.js"></script>
+<script src="js/auth.js"></script>
+<script src="js/utils.js"></script>
+<script>
+let currentUser = null;
+let taskData    = null;
+let taskId      = null;
+
+async function init() {
+    const params = new URLSearchParams(window.location.search);
+    taskId = parseInt(params.get('id'), 10);
+    if (!taskId) {
+        document.getElementById('taskContent').innerHTML = '<div class="empty-state"><div>無效的任務 ID</div></div>';
+        return;
+    }
+
+    currentUser = await fetchCurrentUser();
+    renderNavBar('nav-container', currentUser);
+    await loadTask();
+}
+
+async function loadTask() {
+    try {
+        const res        = await Tasks.get(taskId);
+        taskData         = res.data.task;
+        const apps       = res.data.applications || [];
+        const hasApplied = res.data.has_applied;
+        const activities = res.data.activities || [];
+        const review     = res.data.review || null;
+        renderTask(taskData, apps, hasApplied, activities, review);
+    } catch (err) {
+        document.getElementById('taskContent').innerHTML =
+            `<div class="empty-state"><div>${escapeHtml(err.message)}</div></div>`;
+    }
+}
+
+function renderTask(task, applications, hasApplied, activities, review) {
+    const content = document.getElementById('taskContent');
+    content.innerHTML = '';
+
+    const card = document.createElement('div');
+    card.className = 'card';
+
+    // Header
+    const header = document.createElement('div');
+    header.className = 'detail-header';
+
+    const titleEl = document.createElement('h2');
+    titleEl.className = 'detail-title';
+    titleEl.textContent = task.title;
+
+    const badge = document.createElement('span');
+    badge.className = statusClass(task.status);
+    badge.textContent = statusLabel(task.status);
+
+    header.appendChild(titleEl);
+    header.appendChild(badge);
+    card.appendChild(header);
+
+    // Meta grid
+    const metaGrid = document.createElement('div');
+    metaGrid.className = 'detail-meta';
+
+    const metaItems = [
+        { label: '預算',      text: formatBudget(task.budget) },
+        { label: '截止日期',   text: formatDate(task.deadline) },
+        { label: '分類',      text: task.category },
+        { label: '發案者',    text: task.client_name,          link: `profile.html?id=${task.client_id}` },
+        { label: '申請人數',   text: `${task.applicant_count} 人` },
+        { label: '指派接案者', text: task.assigned_worker_name || '尚未指派',
+          link: task.assigned_worker_id ? `profile.html?id=${task.assigned_worker_id}` : null },
+        { label: '發布時間',   text: formatDate(task.created_at) },
+    ];
+
+    metaItems.forEach(({ label, text, link }) => {
+        const item = document.createElement('div');
+        item.className = 'meta-item';
+        const lbl = document.createElement('div');
+        lbl.className = 'meta-label';
+        lbl.textContent = label;
+        const val = document.createElement('div');
+        val.className = 'meta-value';
+        if (link) {
+            const a = document.createElement('a');
+            a.href = link;
+            a.textContent = text;
+            a.style.color = 'var(--accent)';
+            val.appendChild(a);
+        } else {
+            val.textContent = text;
+        }
+        item.appendChild(lbl);
+        item.appendChild(val);
+        metaGrid.appendChild(item);
+    });
+
+    card.appendChild(metaGrid);
+
+    // Description
+    const descSection = document.createElement('div');
+    descSection.className = 'description-section';
+    const secTitle = document.createElement('h3');
+    secTitle.className = 'section-title';
+    secTitle.textContent = '任務描述';
+    const descText = document.createElement('p');
+    descText.className = 'description-text';
+    descText.textContent = task.description;
+    descSection.appendChild(secTitle);
+    descSection.appendChild(descText);
+    card.appendChild(descSection);
+
+    // Action bar
+    const actionBar = buildActionBar(task, hasApplied);
+    if (actionBar) card.appendChild(actionBar);
+
+    content.appendChild(card);
+
+    // Applicants section (only for task owner)
+    if (currentUser && currentUser.id === task.client_id && applications.length > 0) {
+        const appsCard = document.createElement('div');
+        appsCard.className = 'card';
+        appsCard.style.marginTop = '1.25rem';
+
+        const appsTitle = document.createElement('h3');
+        appsTitle.className = 'section-title';
+        appsTitle.textContent = `申請者列表 (${applications.length} 人)`;
+        appsCard.appendChild(appsTitle);
+
+        const list = document.createElement('div');
+        list.className = 'applicant-list';
+
+        applications.forEach(app => {
+            const item = document.createElement('div');
+            item.className = 'applicant-item';
+
+            const info = document.createElement('div');
+            const nameEl = document.createElement('div');
+            nameEl.className = 'applicant-name';
+            const nameLink = document.createElement('a');
+            nameLink.href = `profile.html?id=${app.worker_id}`;
+            nameLink.textContent = app.worker_name;
+            nameEl.appendChild(nameLink);
+            info.appendChild(nameEl);
+            if (app.message) {
+                const msgEl = document.createElement('div');
+                msgEl.className = 'applicant-msg';
+                msgEl.textContent = app.message;
+                info.appendChild(msgEl);
+            }
+
+            item.appendChild(info);
+
+            // Assign button (only when status is open)
+            if (task.status === 'open') {
+                const assignBtn = document.createElement('button');
+                assignBtn.className = 'btn btn-success btn-sm';
+                assignBtn.textContent = '指派此人';
+                assignBtn.addEventListener('click', () => assignWorker(app.worker_id, app.worker_name));
+                item.appendChild(assignBtn);
+            }
+
+            list.appendChild(item);
+        });
+
+        appsCard.appendChild(list);
+        content.appendChild(appsCard);
+    }
+
+    // Activity timeline
+    if (activities.length > 0) {
+        const actCard = document.createElement('div');
+        actCard.className = 'card';
+        actCard.style.marginTop = '1.25rem';
+
+        const actTitle = document.createElement('h3');
+        actTitle.className = 'section-title';
+        actTitle.textContent = '任務動態';
+        actCard.appendChild(actTitle);
+
+        const timeline = document.createElement('div');
+        timeline.className = 'timeline';
+
+        activities.forEach(act => {
+            const item = document.createElement('div');
+            item.className = 'timeline-item';
+
+            const dot = document.createElement('div');
+            dot.className = 'timeline-dot ' + timelineDotClass(act.action);
+            item.appendChild(dot);
+
+            const actionEl = document.createElement('div');
+            actionEl.className = 'timeline-action';
+            actionEl.textContent = activityLabel(act.action, act.username, act.note);
+            item.appendChild(actionEl);
+
+            const metaEl = document.createElement('div');
+            metaEl.className = 'timeline-meta';
+            metaEl.textContent = formatDate(act.created_at) + ' · ' + escapeHtml(act.username);
+            item.appendChild(metaEl);
+
+            timeline.appendChild(item);
+        });
+
+        actCard.appendChild(timeline);
+        content.appendChild(actCard);
+    }
+
+    // ── Review section (task completed) ───────────────────────────────────────
+    if (task.status === 'completed') {
+        const reviewCard = document.createElement('div');
+        reviewCard.className = 'card';
+        reviewCard.style.marginTop = '1.25rem';
+
+        const reviewTitle = document.createElement('h3');
+        reviewTitle.className = 'section-title';
+        reviewTitle.textContent = '任務評價';
+        reviewCard.appendChild(reviewTitle);
+
+        if (review) {
+            // Show existing review
+            const stars = document.createElement('div');
+            stars.className = 'stars-display';
+            stars.style.fontSize = '1.4rem';
+            stars.style.marginBottom = '.5rem';
+            for (let i = 1; i <= 5; i++) {
+                const s = document.createElement('span');
+                s.className = 'star' + (i <= review.rating ? ' filled' : '');
+                s.textContent = '★';
+                stars.appendChild(s);
+            }
+            const score = document.createElement('span');
+            score.className = 'rating-score';
+            score.style.marginLeft = '.5rem';
+            score.textContent = review.rating + '.0';
+            stars.appendChild(score);
+            reviewCard.appendChild(stars);
+
+            if (review.comment) {
+                const c = document.createElement('div');
+                c.className = 'review-comment';
+                c.style.marginTop = '.5rem';
+                c.textContent = review.comment;
+                reviewCard.appendChild(c);
+            }
+            const meta = document.createElement('div');
+            meta.className = 'review-date';
+            meta.style.marginTop = '.4rem';
+            meta.textContent = `由 ${escapeHtml(review.reviewer_name)} 評價 · ${formatDate(review.created_at)}`;
+            reviewCard.appendChild(meta);
+
+        } else if (currentUser && currentUser.id === task.client_id) {
+            // Show review form for task creator
+            const formDiv = document.createElement('div');
+
+            const starRow = document.createElement('div');
+            starRow.style.marginBottom = '1rem';
+            const starLabel = document.createElement('div');
+            starLabel.style.cssText = 'font-size:.875rem;font-weight:600;color:var(--text-label);margin-bottom:.5rem';
+            starLabel.textContent = '為接案者評分';
+            const starRating = document.createElement('div');
+            starRating.className = 'star-rating';
+            starRating.id = 'starRating';
+            let selectedRating = 0;
+            for (let i = 1; i <= 5; i++) {
+                const s = document.createElement('span');
+                s.className = 'star';
+                s.textContent = '★';
+                s.dataset.value = i;
+                s.addEventListener('mouseenter', () => highlightStars(starRating, i));
+                s.addEventListener('mouseleave', () => highlightStars(starRating, selectedRating));
+                s.addEventListener('click', () => {
+                    selectedRating = i;
+                    highlightStars(starRating, selectedRating);
+                });
+                starRating.appendChild(s);
+            }
+            starRow.appendChild(starLabel);
+            starRow.appendChild(starRating);
+
+            const commentGroup = document.createElement('div');
+            commentGroup.className = 'form-group';
+            commentGroup.style.marginTop = '.75rem';
+            const commentLabel = document.createElement('label');
+            commentLabel.textContent = '評論（選填，500 字以內）';
+            const commentInput = document.createElement('textarea');
+            commentInput.className = 'form-control';
+            commentInput.rows = 3;
+            commentInput.maxLength = 500;
+            commentInput.placeholder = '分享你對這次合作的感想...';
+            commentGroup.appendChild(commentLabel);
+            commentGroup.appendChild(commentInput);
+
+            const submitBtn = document.createElement('button');
+            submitBtn.className = 'btn btn-primary';
+            submitBtn.textContent = '提交評價';
+            submitBtn.style.marginTop = '.5rem';
+            submitBtn.addEventListener('click', async () => {
+                if (selectedRating === 0) { showMessage('msg', '請選擇評分星數'); return; }
+                submitBtn.disabled = true;
+                submitBtn.textContent = '提交中...';
+                try {
+                    await Tasks.review(taskId, { rating: selectedRating, comment: commentInput.value.trim() });
+                    showMessage('msg', '評價提交成功！', 'success');
+                    await loadTask();
+                } catch (err) {
+                    showMessage('msg', err.message);
+                    submitBtn.disabled = false;
+                    submitBtn.textContent = '提交評價';
+                }
+            });
+
+            formDiv.appendChild(starRow);
+            formDiv.appendChild(commentGroup);
+            formDiv.appendChild(submitBtn);
+            reviewCard.appendChild(formDiv);
+        } else {
+            const empty = document.createElement('div');
+            empty.className = 'bio-empty';
+            empty.textContent = '此任務尚未留下評價';
+            reviewCard.appendChild(empty);
+        }
+
+        content.appendChild(reviewCard);
+    }
+}
+
+function highlightStars(container, count) {
+    container.querySelectorAll('.star').forEach((s, idx) => {
+        s.classList.toggle('filled', idx < count);
+    });
+}
+
+function timelineDotClass(action) {
+    const map = {
+        task_created:            '',
+        applied:                 'dot-applied',
+        worker_assigned:         'dot-assigned',
+        task_started:            'dot-started',
+        marked_completed:        'dot-completed',
+        completion_confirmed:    'dot-confirmed',
+        task_updated:            'dot-updated',
+        application_withdrawn:   'dot-withdrawn',
+        review_submitted:        'dot-confirmed',
+    };
+    return map[action] || '';
+}
+
+function activityLabel(action, username, note) {
+    const u = username || '';
+    const n = note || '';
+    const map = {
+        task_created:          '任務已發布',
+        applied:               `${u} 申請接案`,
+        worker_assigned:       `指派 ${n} 為接案者`,
+        task_started:          `${u} 開始執行`,
+        marked_completed:      `${u} 標記完成，等待確認`,
+        completion_confirmed:  '任務已完成確認',
+        task_updated:          `${u} 修改了任務`,
+        application_withdrawn: `${u} 取消了申請`,
+        review_submitted:      `${u} 留下了 ${n} 星評價`,
+    };
+    return map[action] || action;
+}
+
+function buildActionBar(task, hasApplied) {
+    if (!currentUser) return null;
+
+    const bar = document.createElement('div');
+    bar.className = 'action-bar';
+    bar.id = 'actionBar';
+
+    const isOwner    = currentUser.id === task.client_id;
+    const isAssigned = task.assigned_worker_id === currentUser.id;
+
+    let hasButtons = false;
+
+    // Worker: apply / withdraw / already applied indicator
+    if (!isOwner && task.status === 'open') {
+        if (hasApplied) {
+            // Show withdraw button
+            const withdrawBtn = document.createElement('button');
+            withdrawBtn.className = 'btn btn-danger';
+            withdrawBtn.textContent = '取消申請';
+            withdrawBtn.addEventListener('click', withdrawApplication);
+            bar.appendChild(withdrawBtn);
+        } else {
+            // Show apply button
+            const btn = document.createElement('button');
+            btn.className = 'btn btn-primary';
+            btn.textContent = '申請接案';
+            btn.addEventListener('click', openApplyModal);
+            bar.appendChild(btn);
+        }
+        hasButtons = true;
+    }
+
+    // Assigned worker: start (status=assigned)
+    if (isAssigned && task.status === 'assigned') {
+        const btn = document.createElement('button');
+        btn.className = 'btn btn-warning';
+        btn.textContent = '開始執行';
+        btn.addEventListener('click', startTask);
+        bar.appendChild(btn);
+        hasButtons = true;
+    }
+
+    // Assigned worker: complete (status=in_progress)
+    if (isAssigned && task.status === 'in_progress') {
+        const btn = document.createElement('button');
+        btn.className = 'btn btn-success';
+        btn.textContent = '標記完成';
+        btn.addEventListener('click', completeTask);
+        bar.appendChild(btn);
+        hasButtons = true;
+    }
+
+    // Owner: confirm (status=completed_pending_confirmation)
+    if (isOwner && task.status === 'completed_pending_confirmation') {
+        const btn = document.createElement('button');
+        btn.className = 'btn btn-success';
+        btn.textContent = '確認完成';
+        btn.addEventListener('click', confirmTask);
+        bar.appendChild(btn);
+        hasButtons = true;
+    }
+
+    // Owner: edit + delete (status=open)
+    if (isOwner && task.status === 'open') {
+        const editBtn = document.createElement('button');
+        editBtn.className = 'btn btn-outline';
+        editBtn.textContent = '修改任務';
+        editBtn.addEventListener('click', openEditModal);
+        bar.appendChild(editBtn);
+
+        const delBtn = document.createElement('button');
+        delBtn.className = 'btn btn-danger';
+        delBtn.textContent = '刪除任務';
+        delBtn.addEventListener('click', deleteTask);
+        bar.appendChild(delBtn);
+        hasButtons = true;
+    }
+
+    return hasButtons ? bar : null;
+}
+
+// ── Apply Modal ────────────────────────────────────────────────────────────────
+
+function openApplyModal() {
+    document.getElementById('applyMessage').value = '';
+    document.getElementById('applyModal').classList.add('open');
+}
+
+function closeApplyModal() {
+    document.getElementById('applyModal').classList.remove('open');
+}
+
+document.getElementById('applyCancel').addEventListener('click', closeApplyModal);
+document.getElementById('applyModal').addEventListener('click', (e) => {
+    if (e.target === document.getElementById('applyModal')) closeApplyModal();
+});
+
+document.getElementById('applyConfirm').addEventListener('click', async () => {
+    const message = document.getElementById('applyMessage').value.trim();
+    const btn = document.getElementById('applyConfirm');
+    btn.disabled = true;
+    btn.textContent = '申請中...';
+    try {
+        await Tasks.apply(taskId, { message });
+        closeApplyModal();
+        showMessage('msg', '申請成功！', 'success');
+        await loadTask();
+    } catch (err) {
+        showMessage('msg', err.message);
+        closeApplyModal();
+    } finally {
+        btn.disabled = false;
+        btn.textContent = '確認申請';
+    }
+});
+
+// ── Actions ────────────────────────────────────────────────────────────────────
+
+async function withdrawApplication() {
+    if (!confirm('確定要取消申請嗎？')) return;
+    try {
+        await Tasks.withdraw(taskId);
+        showMessage('msg', '已取消申請', 'success');
+        await loadTask();
+    } catch (err) {
+        showMessage('msg', err.message);
+    }
+}
+
+async function assignWorker(workerId, workerName) {
+    if (!confirm(`確定要指派 ${workerName} 嗎？`)) return;
+    try {
+        await Tasks.assign(taskId, { worker_id: workerId });
+        showMessage('msg', '指派成功！', 'success');
+        await loadTask();
+    } catch (err) {
+        showMessage('msg', err.message);
+    }
+}
+
+async function startTask() {
+    if (!confirm('確定要開始執行此任務嗎？')) return;
+    try {
+        await Tasks.start(taskId);
+        showMessage('msg', '任務已開始執行！', 'success');
+        await loadTask();
+    } catch (err) {
+        showMessage('msg', err.message);
+    }
+}
+
+async function completeTask() {
+    if (!confirm('確定要標記為完成嗎？')) return;
+    try {
+        await Tasks.complete(taskId);
+        showMessage('msg', '已標記完成，等待發案者確認', 'success');
+        await loadTask();
+    } catch (err) {
+        showMessage('msg', err.message);
+    }
+}
+
+async function confirmTask() {
+    if (!confirm('確認此任務已完成嗎？')) return;
+    try {
+        await Tasks.confirm(taskId);
+        showMessage('msg', '任務已確認完成！', 'success');
+        await loadTask();
+    } catch (err) {
+        showMessage('msg', err.message);
+    }
+}
+
+async function deleteTask() {
+    if (!confirm('確定要刪除此任務嗎？此操作無法復原。')) return;
+    try {
+        await Tasks.delete(taskId);
+        alert('任務已刪除');
+        window.location.href = 'index.html';
+    } catch (err) {
+        showMessage('msg', err.message);
+    }
+}
+
+// ── Edit Modal ─────────────────────────────────────────────────────────────────
+
+function openEditModal() {
+    document.getElementById('editTitle').value       = taskData.title;
+    document.getElementById('editDescription').value = taskData.description;
+    document.getElementById('editBudget').value      = taskData.budget;
+    document.getElementById('editDeadline').value    = formatDate(taskData.deadline);
+    document.getElementById('editCategory').value    = taskData.category;
+    document.getElementById('editModal').classList.add('open');
+}
+
+document.getElementById('closeEditModal').addEventListener('click', () => {
+    document.getElementById('editModal').classList.remove('open');
+});
+
+document.getElementById('editModal').addEventListener('click', (e) => {
+    if (e.target === document.getElementById('editModal')) {
+        document.getElementById('editModal').classList.remove('open');
+    }
+});
+
+document.getElementById('editForm').addEventListener('submit', async (e) => {
+    e.preventDefault();
+    hideMessage('editMsg');
+
+    const data = {
+        title:       document.getElementById('editTitle').value.trim(),
+        description: document.getElementById('editDescription').value.trim(),
+        budget:      parseFloat(document.getElementById('editBudget').value),
+        deadline:    document.getElementById('editDeadline').value,
+        category:    document.getElementById('editCategory').value,
+    };
+
+    if (!data.title || !data.description || !data.deadline) {
+        showMessage('editMsg', '請填寫所有必填欄位');
+        return;
+    }
+
+    const submitBtn = document.getElementById('editSubmitBtn');
+    submitBtn.disabled = true;
+    submitBtn.textContent = '儲存中...';
+
+    try {
+        await Tasks.update(taskId, data);
+        document.getElementById('editModal').classList.remove('open');
+        showMessage('msg', '任務更新成功！', 'success');
+        await loadTask();
+    } catch (err) {
+        showMessage('editMsg', err.message);
+    } finally {
+        submitBtn.disabled = false;
+        submitBtn.textContent = '儲存修改';
+    }
+});
+
+init();
+</script>
+</body>
+</html>

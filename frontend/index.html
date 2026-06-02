@@ -1,0 +1,235 @@
+<!DOCTYPE html>
+<html lang="zh-TW">
+<head>
+    <meta charset="UTF-8">
+    <script src="js/theme.js"></script>
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>任務列表 - 接案平台</title>
+    <link rel="stylesheet" href="css/style.css">
+</head>
+<body>
+
+<div id="nav-container"></div>
+
+<div class="container page-wrapper">
+    <div class="page-header">
+        <h1 class="page-title">所有任務</h1>
+        <div id="create-btn-container"></div>
+    </div>
+
+    <!-- Filters -->
+    <div class="filters">
+        <select id="filterStatus">
+            <option value="">所有狀態</option>
+            <option value="open">開放申請</option>
+            <option value="assigned">已指派</option>
+            <option value="in_progress">進行中</option>
+            <option value="completed_pending_confirmation">待確認完成</option>
+            <option value="completed">已完成</option>
+        </select>
+        <select id="filterCategory">
+            <option value="">所有分類</option>
+            <option value="設計">設計</option>
+            <option value="開發">開發</option>
+            <option value="文案">文案</option>
+            <option value="行銷">行銷</option>
+            <option value="其他">其他</option>
+        </select>
+        <input type="text" id="searchInput" placeholder="搜尋任務..." style="flex:1;min-width:160px">
+        <button id="searchBtn" class="btn btn-secondary btn-sm">搜尋</button>
+        <button id="resetBtn" class="btn btn-outline btn-sm">重置</button>
+    </div>
+
+    <div id="msg" class="message"></div>
+
+    <div id="taskGrid" class="task-grid">
+        <div class="loading-state">載入中...</div>
+    </div>
+
+    <!-- Pagination -->
+    <div id="paginationContainer" class="pagination" style="display:none"></div>
+</div>
+
+<script src="js/api.js"></script>
+<script src="js/auth.js"></script>
+<script src="js/utils.js"></script>
+<script>
+let currentUser = null;
+let currentPage = 1;
+const PAGE_LIMIT = 9;
+
+async function init() {
+    currentUser = await fetchCurrentUser();
+    renderNavBar('nav-container', currentUser);
+
+    // Show create button if logged in
+    if (currentUser) {
+        const container = document.getElementById('create-btn-container');
+        const link = document.createElement('a');
+        link.href = 'task-create.html';
+        link.className = 'btn btn-primary';
+        link.textContent = '+ 發布新任務';
+        container.appendChild(link);
+    } else {
+        const container = document.getElementById('create-btn-container');
+        container.style.display = 'flex';
+        container.style.gap = '.5rem';
+        const loginLink = document.createElement('a');
+        loginLink.href = 'login.html';
+        loginLink.className = 'btn btn-outline btn-sm';
+        loginLink.textContent = '登入';
+        const regLink = document.createElement('a');
+        regLink.href = 'register.html';
+        regLink.className = 'btn btn-primary btn-sm';
+        regLink.textContent = '註冊';
+        container.appendChild(loginLink);
+        container.appendChild(regLink);
+    }
+
+    await loadTasks();
+}
+
+async function loadTasks(page) {
+    if (page !== undefined) currentPage = page;
+
+    const status   = document.getElementById('filterStatus').value;
+    const category = document.getElementById('filterCategory').value;
+    const search   = document.getElementById('searchInput').value.trim();
+
+    const params = { page: currentPage, limit: PAGE_LIMIT };
+    if (status)   params.status   = status;
+    if (category) params.category = category;
+    if (search)   params.search   = search;
+
+    const grid = document.getElementById('taskGrid');
+    grid.innerHTML = '<div class="loading-state">載入中...</div>';
+    document.getElementById('paginationContainer').style.display = 'none';
+
+    try {
+        const res        = await Tasks.list(params);
+        const tasks      = res.data.tasks;
+        const pagination = res.data.pagination;
+
+        if (tasks.length === 0) {
+            grid.innerHTML = `
+                <div class="empty-state" style="grid-column:1/-1">
+                    <div class="empty-state-text">目前沒有任務</div>
+                </div>`;
+            return;
+        }
+
+        grid.innerHTML = '';
+        tasks.forEach(task => grid.appendChild(buildTaskCard(task)));
+
+        renderPagination(pagination);
+    } catch (err) {
+        grid.innerHTML = '';
+        showMessage('msg', err.message || '載入失敗');
+    }
+}
+
+function renderPagination(pagination) {
+    const container = document.getElementById('paginationContainer');
+    container.innerHTML = '';
+
+    if (pagination.total_pages <= 1) {
+        container.style.display = 'none';
+        return;
+    }
+
+    container.style.display = 'flex';
+
+    // Prev button
+    const prevBtn = document.createElement('button');
+    prevBtn.className = 'pagination-btn';
+    prevBtn.textContent = '← 上一頁';
+    prevBtn.disabled = pagination.page <= 1;
+    prevBtn.addEventListener('click', () => loadTasks(pagination.page - 1));
+    container.appendChild(prevBtn);
+
+    // Page info
+    const info = document.createElement('span');
+    info.className = 'pagination-info';
+    info.textContent = `第 ${pagination.page} / ${pagination.total_pages} 頁`;
+    container.appendChild(info);
+
+    // Next button
+    const nextBtn = document.createElement('button');
+    nextBtn.className = 'pagination-btn';
+    nextBtn.textContent = '下一頁 →';
+    nextBtn.disabled = pagination.page >= pagination.total_pages;
+    nextBtn.addEventListener('click', () => loadTasks(pagination.page + 1));
+    container.appendChild(nextBtn);
+}
+
+function buildTaskCard(task) {
+    const card = document.createElement('a');
+    card.href = `task-detail.html?id=${task.id}`;
+    card.className = 'task-card';
+    card.style.display = 'block';
+
+    const header = document.createElement('div');
+    header.className = 'task-card-header';
+
+    const title = document.createElement('div');
+    title.className = 'task-card-title';
+    title.textContent = task.title;
+
+    const badge = document.createElement('span');
+    badge.className = statusClass(task.status);
+    badge.textContent = statusLabel(task.status);
+
+    header.appendChild(title);
+    header.appendChild(badge);
+
+    const desc = document.createElement('div');
+    desc.className = 'task-card-desc';
+    desc.textContent = task.description;
+
+    const meta = document.createElement('div');
+    meta.className = 'task-card-meta';
+
+    const metaItems = [
+        { cls: 'meta-budget',     text: formatBudget(task.budget) },
+        { cls: 'meta-deadline',   text: formatDate(task.deadline) },
+        { cls: 'meta-category',   text: task.category },
+        { cls: 'meta-creator',    text: task.client_name },
+        { cls: 'meta-applicants', text: `${task.applicant_count} 人申請` },
+    ];
+
+    metaItems.forEach(({ cls, text }) => {
+        const span = document.createElement('span');
+        span.className = cls;
+        span.appendChild(document.createTextNode(text));
+        meta.appendChild(span);
+    });
+
+    card.appendChild(header);
+    card.appendChild(desc);
+    card.appendChild(meta);
+    return card;
+}
+
+// Filter events — reset to page 1 on filter change
+function onFilterChange() {
+    currentPage = 1;
+    loadTasks(1);
+}
+
+document.getElementById('filterStatus').addEventListener('change', onFilterChange);
+document.getElementById('filterCategory').addEventListener('change', onFilterChange);
+document.getElementById('searchBtn').addEventListener('click', onFilterChange);
+document.getElementById('resetBtn').addEventListener('click', () => {
+    document.getElementById('filterStatus').value   = '';
+    document.getElementById('filterCategory').value = '';
+    document.getElementById('searchInput').value    = '';
+    onFilterChange();
+});
+document.getElementById('searchInput').addEventListener('keydown', (e) => {
+    if (e.key === 'Enter') onFilterChange();
+});
+
+init();
+</script>
+</body>
+</html>
