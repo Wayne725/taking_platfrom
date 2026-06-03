@@ -675,6 +675,14 @@ select.form-control option { background: var(--bg-card); color: var(--text-prima
     color: var(--btn-primary-text);
 }
 
+.chat-message.is-pending .chat-bubble {
+    opacity: .72;
+}
+
+.chat-message.is-failed .chat-bubble {
+    border-style: dashed;
+}
+
 .chat-message-meta {
     font-size: .72rem;
     color: var(--text-muted);

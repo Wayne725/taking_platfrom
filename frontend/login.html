@@ -71,6 +71,10 @@
             if (res.data?.session_id) {
                 sessionStorage.setItem('_sid', res.data.session_id);
             }
+            if (res.data?.user) {
+                sessionStorage.setItem('currentUser', JSON.stringify(res.data.user));
+                sessionStorage.setItem('currentUserCachedAt', String(Date.now()));
+            }
             window.location.href = 'index.html';
         } catch (err) {
             showMessage('msg', err.message || '登入失敗，請稍後再試');

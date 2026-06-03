@@ -59,19 +59,32 @@ let currentPage = 1;
 const PAGE_LIMIT = 9;
 
 async function init() {
-    currentUser = await fetchCurrentUser();
+    currentUser = await fetchCurrentUser({
+        preferCache: true,
+        backgroundRefresh: true,
+        onRefresh: (freshUser) => {
+            currentUser = freshUser;
+            renderNavBar('nav-container', currentUser);
+            renderCreateControls();
+        },
+    });
     renderNavBar('nav-container', currentUser);
+    renderCreateControls();
 
-    // Show create button if logged in
+    await loadTasks();
+}
+
+function renderCreateControls() {
+    const container = document.getElementById('create-btn-container');
+    container.innerHTML = '';
+
     if (currentUser) {
-        const container = document.getElementById('create-btn-container');
         const link = document.createElement('a');
         link.href = 'task-create.html';
         link.className = 'btn btn-primary';
         link.textContent = '+ 發布新任務';
         container.appendChild(link);
     } else {
-        const container = document.getElementById('create-btn-container');
         container.style.display = 'flex';
         container.style.gap = '.5rem';
         const loginLink = document.createElement('a');
@@ -85,8 +98,6 @@ async function init() {
         container.appendChild(loginLink);
         container.appendChild(regLink);
     }
-
-    await loadTasks();
 }
 
 async function loadTasks(page) {

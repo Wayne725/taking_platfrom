@@ -344,7 +344,7 @@ document.getElementById('usernameForm').addEventListener('submit', async (e) => 
         await Auth.updateProfile({ username: newUsername });
         showMessage('usernameMsg', '使用者名稱更新成功！', 'success');
         // Refresh profile data & nav
-        sessionStorage.removeItem('currentUser');
+        clearCachedUser();
         currentUser = await fetchCurrentUser();
         renderNavBar('nav-container', currentUser);
         await loadProfile();

@@ -2,14 +2,39 @@
  * auth.js - Auth state helpers used across all pages
  */
 
+const CURRENT_USER_CACHE_KEY = 'currentUser';
+const CURRENT_USER_CACHE_TIME_KEY = 'currentUserCachedAt';
+
 /**
  * Returns the currently cached user from sessionStorage, or null.
  */
 function getCachedUser() {
     try {
-        const raw = sessionStorage.getItem('currentUser');
+        const raw = sessionStorage.getItem(CURRENT_USER_CACHE_KEY);
         return raw ? JSON.parse(raw) : null;
     } catch {
+        return null;
+    }
+}
+
+function setCachedUser(user) {
+    sessionStorage.setItem(CURRENT_USER_CACHE_KEY, JSON.stringify(user));
+    sessionStorage.setItem(CURRENT_USER_CACHE_TIME_KEY, String(Date.now()));
+}
+
+function clearCachedUser() {
+    sessionStorage.removeItem(CURRENT_USER_CACHE_KEY);
+    sessionStorage.removeItem(CURRENT_USER_CACHE_TIME_KEY);
+}
+
+async function refreshCurrentUser() {
+    try {
+        const res = await Auth.me();
+        const user = res.data.user;
+        setCachedUser(user);
+        return user;
+    } catch {
+        clearCachedUser();
         return null;
     }
 }
@@ -18,16 +43,25 @@ function getCachedUser() {
  * Fetches /auth/me from the server and caches result.
  * Returns user object or null if not logged in.
  */
-async function fetchCurrentUser() {
-    try {
-        const res = await Auth.me();
-        const user = res.data.user;
-        sessionStorage.setItem('currentUser', JSON.stringify(user));
-        return user;
-    } catch {
-        sessionStorage.removeItem('currentUser');
-        return null;
+async function fetchCurrentUser(options = {}) {
+    const {
+        preferCache = false,
+        backgroundRefresh = false,
+        onRefresh = null,
+    } = options;
+
+    const cached = preferCache ? getCachedUser() : null;
+
+    if (cached && backgroundRefresh) {
+        refreshCurrentUser().then((freshUser) => {
+            if (typeof onRefresh === 'function') onRefresh(freshUser);
+        });
+        return cached;
     }
+
+    if (cached) return cached;
+
+    return refreshCurrentUser();
 }
 
 /**
@@ -35,7 +69,10 @@ async function fetchCurrentUser() {
  * Returns the user object when authenticated.
  */
 async function requireLogin() {
-    const user = await fetchCurrentUser();
+    const cached = getCachedUser();
+    if (cached) renderNavBar('nav-container', cached);
+
+    const user = await refreshCurrentUser();
     if (!user) {
         window.location.href = 'login.html';
         return null;
@@ -50,7 +87,7 @@ async function logout() {
     try {
         await Auth.logout();
     } catch (_) { /* ignore */ }
-    sessionStorage.removeItem('currentUser');
+    clearCachedUser();
     window.location.href = 'login.html';
 }
 
@@ -59,8 +96,9 @@ async function logout() {
  */
 function renderNavBar(containerId, user) {
     const container = document.getElementById(containerId);
-    if (!container || !user) return;
+    if (!container) return;
     container.innerHTML = '';
+    if (!user) return;
 
     const nav = document.createElement('nav');
     nav.className = 'navbar';

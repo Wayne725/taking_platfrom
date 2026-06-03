@@ -85,7 +85,11 @@ let currentUser = null;
 let taskData    = null;
 let taskId      = null;
 let chatPollTimer = null;
-let chatRenderedKey = '';
+let chatMessages = [];
+let chatLastMessageId = 0;
+let chatParticipantsKey = '';
+let chatInitialLoaded = false;
+let chatTempMessageSeq = 0;
 const CHAT_POLL_MS = 5000;
 
 async function init() {
@@ -96,7 +100,19 @@ async function init() {
         return;
     }
 
-    currentUser = await fetchCurrentUser();
+    currentUser = await fetchCurrentUser({
+        preferCache: true,
+        backgroundRefresh: true,
+        onRefresh: (freshUser) => {
+            const previousUserId = currentUser ? currentUser.id : null;
+            const freshUserId = freshUser ? freshUser.id : null;
+            currentUser = freshUser;
+            renderNavBar('nav-container', currentUser);
+            if (previousUserId !== freshUserId) {
+                loadTask();
+            }
+        },
+    });
     renderNavBar('nav-container', currentUser);
     await loadTask();
 }
@@ -471,7 +487,10 @@ function buildChatCard(participantCount) {
 
 function setupChat(canChat) {
     stopChatPolling();
-    chatRenderedKey = '';
+    chatMessages = [];
+    chatLastMessageId = 0;
+    chatParticipantsKey = '';
+    chatInitialLoaded = false;
 
     if (!canChat) return;
 
@@ -491,17 +510,22 @@ async function loadChat(scrollToBottom = false) {
     if (!messagesEl) return;
 
     try {
-        const res = await Tasks.chat(taskId, { limit: 100 });
+        const params = { limit: 100 };
+        if (chatLastMessageId > 0) params.after_id = chatLastMessageId;
+
+        const res = await Tasks.chat(taskId, params);
         const participants = res.data.participants || [];
-        const messages = res.data.messages || [];
-        const lastId = messages.length ? messages[messages.length - 1].id : 0;
-        const renderKey = `${messages.length}:${lastId}`;
+        const incomingMessages = res.data.messages || [];
 
-        renderChatParticipants(participants);
+        renderChatParticipantsIfChanged(participants);
 
-        if (renderKey !== chatRenderedKey) {
-            renderChatMessages(messages, scrollToBottom);
-            chatRenderedKey = renderKey;
+        if (!chatInitialLoaded) {
+            chatMessages = incomingMessages;
+            chatInitialLoaded = true;
+            updateChatLastMessageId(incomingMessages);
+            renderChatMessages(chatMessages, scrollToBottom);
+        } else if (mergeChatMessages(incomingMessages)) {
+            renderChatMessages(chatMessages, scrollToBottom);
         } else if (scrollToBottom) {
             scrollChatToBottom();
         }
@@ -512,6 +536,14 @@ async function loadChat(scrollToBottom = false) {
             stopChatPolling();
         }
     }
+}
+
+function renderChatParticipantsIfChanged(participants) {
+    const key = participants.map(participant => `${participant.id}:${participant.username}`).join('|');
+    if (key === chatParticipantsKey) return;
+
+    chatParticipantsKey = key;
+    renderChatParticipants(participants);
 }
 
 function renderChatParticipants(participants) {
@@ -531,6 +563,61 @@ function renderChatParticipants(participants) {
     });
 }
 
+function updateChatLastMessageId(messages) {
+    messages.forEach((message) => {
+        const id = Number(message.id);
+        if (Number.isFinite(id) && id > chatLastMessageId) {
+            chatLastMessageId = id;
+        }
+    });
+}
+
+function mergeChatMessages(messages) {
+    let changed = false;
+
+    messages.forEach((message) => {
+        const exists = chatMessages.some(existing => String(existing.id) === String(message.id));
+        if (!exists) {
+            chatMessages.push(message);
+            changed = true;
+        }
+    });
+
+    if (changed) {
+        updateChatLastMessageId(messages);
+    }
+
+    return changed;
+}
+
+function appendOptimisticChatMessage(message) {
+    chatMessages.push(message);
+    renderChatMessages(chatMessages, true);
+}
+
+function replaceChatMessage(tempId, message) {
+    const idx = chatMessages.findIndex(existing => String(existing.id) === String(tempId));
+    if (idx >= 0) {
+        chatMessages[idx] = message;
+        updateChatLastMessageId([message]);
+        renderChatMessages(chatMessages, true);
+        return;
+    }
+
+    if (mergeChatMessages([message])) {
+        renderChatMessages(chatMessages, true);
+    }
+}
+
+function markChatMessageFailed(tempId) {
+    const message = chatMessages.find(existing => String(existing.id) === String(tempId));
+    if (!message) return;
+
+    message.pending = false;
+    message.failed = true;
+    renderChatMessages(chatMessages, true);
+}
+
 function renderChatMessages(messages, forceScroll) {
     const messagesEl = document.getElementById('chatMessages');
     if (!messagesEl) return;
@@ -543,14 +630,23 @@ function renderChatMessages(messages, forceScroll) {
     } else {
         messages.forEach((message) => {
             const row = document.createElement('div');
-            row.className = 'chat-message' + (message.sender_id === currentUser.id ? ' is-own' : '');
+            row.className = 'chat-message'
+                + (currentUser && Number(message.sender_id) === Number(currentUser.id) ? ' is-own' : '')
+                + (message.pending ? ' is-pending' : '')
+                + (message.failed ? ' is-failed' : '');
 
             const bubble = document.createElement('div');
             bubble.className = 'chat-bubble';
 
             const meta = document.createElement('div');
             meta.className = 'chat-message-meta';
-            meta.textContent = `${message.sender_name} · ${formatChatTime(message.created_at)}`;
+            if (message.failed) {
+                meta.textContent = `${message.sender_name} · 送出失敗`;
+            } else if (message.pending) {
+                meta.textContent = `${message.sender_name} · 傳送中...`;
+            } else {
+                meta.textContent = `${message.sender_name} · ${formatChatTime(message.created_at)}`;
+            }
             bubble.appendChild(meta);
 
             const text = document.createElement('div');
@@ -603,14 +699,25 @@ async function sendChatMessage(e) {
         return;
     }
 
+    const tempId = `temp-${Date.now()}-${++chatTempMessageSeq}`;
+    appendOptimisticChatMessage({
+        id: tempId,
+        sender_id: currentUser.id,
+        sender_name: currentUser.username,
+        message,
+        created_at: new Date().toISOString(),
+        pending: true,
+    });
+
+    input.value = '';
     btn.disabled = true;
     btn.textContent = '送出中...';
 
     try {
-        await Tasks.sendChat(taskId, { message });
-        input.value = '';
-        await loadChat(true);
+        const res = await Tasks.sendChat(taskId, { message });
+        replaceChatMessage(tempId, res.data.message);
     } catch (err) {
+        markChatMessageFailed(tempId);
         showMessage('msg', err.message);
     } finally {
         btn.disabled = false;
