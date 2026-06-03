@@ -77,6 +77,11 @@ const Tasks = {
     confirm:  (id)          => request(`/tasks/${id}/confirm`,   { method: 'POST' }),
     withdraw: (id)          => request(`/tasks/${id}/withdraw`,  { method: 'POST' }),
     review:   (id, data)    => request(`/tasks/${id}/review`,    { method: 'POST', body: data }),
+    chat:     (id, params = {}) => {
+        const qs = new URLSearchParams(params).toString();
+        return request(`/tasks/${id}/chat` + (qs ? '?' + qs : ''), { method: 'GET' });
+    },
+    sendChat: (id, data)    => request(`/tasks/${id}/chat`,       { method: 'POST', body: data }),
 };
 
 const Users = {

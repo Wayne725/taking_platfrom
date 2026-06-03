@@ -82,6 +82,16 @@ if ($currentUser !== null) {
     $hasApplied = (bool) $stmt->fetch();
 }
 
+$chat = [
+    'can_chat'          => false,
+    'participant_count' => 0,
+];
+if ($currentUser !== null) {
+    $isTaskOwner = $currentUser['id'] === $task['client_id'];
+    $chat['can_chat'] = ($isTaskOwner && $task['applicant_count'] > 0) || $hasApplied;
+    $chat['participant_count'] = $task['applicant_count'] > 0 ? $task['applicant_count'] + 1 : 0;
+}
+
 // Fetch activity log
 $stmt = $db->prepare('SELECT ta.action, ta.note, ta.created_at, u.username
                       FROM task_activities ta
@@ -107,6 +117,7 @@ successResponse('取得任務詳情成功', [
     'task'         => $task,
     'applications' => $applications,
     'has_applied'  => $hasApplied,
+    'chat'         => $chat,
     'activities'   => $activities,
     'review'       => $review,
 ]);

@@ -1,8 +1,5 @@
 -- Task Management System Database Schema
--- MySQL 5.7+ / MariaDB 10.3+
-
-CREATE DATABASE IF NOT EXISTS task_system CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci;
-USE task_system;
+-- 匯入版本：不含 CREATE DATABASE / USE（用於 InfinityFree / 共用主機）
 
 -- Users table
 CREATE TABLE IF NOT EXISTS users (
@@ -10,7 +7,7 @@ CREATE TABLE IF NOT EXISTS users (
     username VARCHAR(50) NOT NULL UNIQUE,
     email VARCHAR(255) NOT NULL UNIQUE,
     password_hash VARCHAR(255) NOT NULL,
-    role ENUM('client', 'worker') NOT NULL DEFAULT 'worker', -- deprecated, no longer used
+    role ENUM('client', 'worker') NOT NULL DEFAULT 'worker',
     bio  TEXT NULL,
     created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
     updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
@@ -123,8 +120,3 @@ CREATE TABLE IF NOT EXISTS task_activities (
     FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE,
     INDEX idx_task_id (task_id)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
-
--- Sample data (optional, comment out in production)
--- INSERT INTO users (username, email, password_hash, role) VALUES
--- ('client1', 'client@example.com', '$2y$10$examplehash', 'client'),
--- ('worker1', 'worker@example.com', '$2y$10$examplehash', 'worker');

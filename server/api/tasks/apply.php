@@ -1,6 +1,7 @@
 <?php
 require_once __DIR__ . '/../../helpers.php';
 require_once __DIR__ . '/../../db.php';
+require_once __DIR__ . '/../../chat_helpers.php';
 
 setCorsHeaders();
 startAppSession();
@@ -45,12 +46,27 @@ $body    = getJsonBody();
 $message = trim($body['message'] ?? '');
 
 try {
+    $db->beginTransaction();
+
     $stmt = $db->prepare(
         'INSERT INTO task_applications (task_id, worker_id, message) VALUES (?, ?, ?)'
     );
     $stmt->execute([$taskId, $currentUser['id'], $message ?: null]);
-} catch (PDOException $e) {
-    errorResponse('您已申請過此任務');
+
+    $roomId = ensureTaskChatRoom($db, $taskId, (int) $task['client_id']);
+    addTaskChatParticipant($db, $roomId, $currentUser['id']);
+
+    $db->commit();
+} catch (Throwable $e) {
+    if ($db->inTransaction()) {
+        $db->rollBack();
+    }
+
+    if ($e instanceof PDOException && $e->getCode() === '23000') {
+        errorResponse('您已申請過此任務');
+    }
+
+    errorResponse('申請失敗，請稍後再試', 500);
 }
 
 logActivity($db, $taskId, $currentUser['id'], 'applied');

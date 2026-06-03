@@ -84,6 +84,9 @@
 let currentUser = null;
 let taskData    = null;
 let taskId      = null;
+let chatPollTimer = null;
+let chatRenderedKey = '';
+const CHAT_POLL_MS = 5000;
 
 async function init() {
     const params = new URLSearchParams(window.location.search);
@@ -104,16 +107,19 @@ async function loadTask() {
         taskData         = res.data.task;
         const apps       = res.data.applications || [];
         const hasApplied = res.data.has_applied;
+        const chat       = res.data.chat || { can_chat: false };
         const activities = res.data.activities || [];
         const review     = res.data.review || null;
-        renderTask(taskData, apps, hasApplied, activities, review);
+        renderTask(taskData, apps, hasApplied, activities, review, chat);
+        setupChat(chat.can_chat);
     } catch (err) {
+        stopChatPolling();
         document.getElementById('taskContent').innerHTML =
             `<div class="empty-state"><div>${escapeHtml(err.message)}</div></div>`;
     }
 }
 
-function renderTask(task, applications, hasApplied, activities, review) {
+function renderTask(task, applications, hasApplied, activities, review, chat) {
     const content = document.getElementById('taskContent');
     content.innerHTML = '';
 
@@ -193,6 +199,10 @@ function renderTask(task, applications, hasApplied, activities, review) {
     if (actionBar) card.appendChild(actionBar);
 
     content.appendChild(card);
+
+    if (chat.can_chat) {
+        content.appendChild(buildChatCard(chat.participant_count || 0));
+    }
 
     // Applicants section (only for task owner)
     if (currentUser && currentUser.id === task.client_id && applications.length > 0) {
@@ -400,6 +410,212 @@ function renderTask(task, applications, hasApplied, activities, review) {
         }
 
         content.appendChild(reviewCard);
+    }
+}
+
+function buildChatCard(participantCount) {
+    const card = document.createElement('div');
+    card.className = 'card chat-card';
+    card.style.marginTop = '1.25rem';
+
+    const title = document.createElement('h3');
+    title.className = 'section-title';
+    title.textContent = '聊天室';
+    card.appendChild(title);
+
+    const meta = document.createElement('div');
+    meta.className = 'chat-meta';
+
+    const count = document.createElement('div');
+    count.className = 'chat-count';
+    count.textContent = participantCount > 0 ? `${participantCount} 位成員` : '';
+    meta.appendChild(count);
+
+    const participants = document.createElement('div');
+    participants.id = 'chatParticipants';
+    participants.className = 'chat-participants';
+    meta.appendChild(participants);
+
+    card.appendChild(meta);
+
+    const messages = document.createElement('div');
+    messages.id = 'chatMessages';
+    messages.className = 'chat-messages';
+    messages.appendChild(el('div', { className: 'chat-loading', text: '載入訊息中...' }));
+    card.appendChild(messages);
+
+    const form = document.createElement('form');
+    form.id = 'chatForm';
+    form.className = 'chat-form';
+    form.addEventListener('submit', sendChatMessage);
+
+    const input = document.createElement('textarea');
+    input.id = 'chatInput';
+    input.className = 'form-control chat-input';
+    input.rows = 2;
+    input.maxLength = 2000;
+    input.placeholder = '輸入訊息...';
+
+    const sendBtn = document.createElement('button');
+    sendBtn.id = 'chatSendBtn';
+    sendBtn.className = 'btn btn-primary';
+    sendBtn.type = 'submit';
+    sendBtn.textContent = '送出';
+
+    form.appendChild(input);
+    form.appendChild(sendBtn);
+    card.appendChild(form);
+
+    return card;
+}
+
+function setupChat(canChat) {
+    stopChatPolling();
+    chatRenderedKey = '';
+
+    if (!canChat) return;
+
+    loadChat(true);
+    chatPollTimer = window.setInterval(() => loadChat(false), CHAT_POLL_MS);
+}
+
+function stopChatPolling() {
+    if (chatPollTimer !== null) {
+        window.clearInterval(chatPollTimer);
+        chatPollTimer = null;
+    }
+}
+
+async function loadChat(scrollToBottom = false) {
+    const messagesEl = document.getElementById('chatMessages');
+    if (!messagesEl) return;
+
+    try {
+        const res = await Tasks.chat(taskId, { limit: 100 });
+        const participants = res.data.participants || [];
+        const messages = res.data.messages || [];
+        const lastId = messages.length ? messages[messages.length - 1].id : 0;
+        const renderKey = `${messages.length}:${lastId}`;
+
+        renderChatParticipants(participants);
+
+        if (renderKey !== chatRenderedKey) {
+            renderChatMessages(messages, scrollToBottom);
+            chatRenderedKey = renderKey;
+        } else if (scrollToBottom) {
+            scrollChatToBottom();
+        }
+    } catch (err) {
+        messagesEl.innerHTML = '';
+        messagesEl.appendChild(el('div', { className: 'chat-empty', text: err.message }));
+        if (err.httpStatus === 401 || err.httpStatus === 403) {
+            stopChatPolling();
+        }
+    }
+}
+
+function renderChatParticipants(participants) {
+    const wrap = document.getElementById('chatParticipants');
+    if (!wrap) return;
+
+    wrap.innerHTML = '';
+
+    participants.forEach((participant) => {
+        const chip = document.createElement('a');
+        chip.className = 'chat-participant';
+        chip.href = `profile.html?id=${participant.id}`;
+        chip.textContent = participant.id === currentUser.id
+            ? `${participant.username}（你）`
+            : participant.username;
+        wrap.appendChild(chip);
+    });
+}
+
+function renderChatMessages(messages, forceScroll) {
+    const messagesEl = document.getElementById('chatMessages');
+    if (!messagesEl) return;
+
+    const shouldStickToBottom = forceScroll || isChatNearBottom(messagesEl);
+    messagesEl.innerHTML = '';
+
+    if (messages.length === 0) {
+        messagesEl.appendChild(el('div', { className: 'chat-empty', text: '尚無訊息' }));
+    } else {
+        messages.forEach((message) => {
+            const row = document.createElement('div');
+            row.className = 'chat-message' + (message.sender_id === currentUser.id ? ' is-own' : '');
+
+            const bubble = document.createElement('div');
+            bubble.className = 'chat-bubble';
+
+            const meta = document.createElement('div');
+            meta.className = 'chat-message-meta';
+            meta.textContent = `${message.sender_name} · ${formatChatTime(message.created_at)}`;
+            bubble.appendChild(meta);
+
+            const text = document.createElement('div');
+            text.className = 'chat-message-text';
+            text.textContent = message.message;
+            bubble.appendChild(text);
+
+            row.appendChild(bubble);
+            messagesEl.appendChild(row);
+        });
+    }
+
+    if (shouldStickToBottom) {
+        scrollChatToBottom();
+    }
+}
+
+function isChatNearBottom(el) {
+    return el.scrollTop + el.clientHeight >= el.scrollHeight - 32;
+}
+
+function scrollChatToBottom() {
+    const messagesEl = document.getElementById('chatMessages');
+    if (messagesEl) messagesEl.scrollTop = messagesEl.scrollHeight;
+}
+
+function formatChatTime(value) {
+    if (!value) return '';
+
+    const date = new Date(String(value).replace(' ', 'T'));
+    if (Number.isNaN(date.getTime())) return formatDate(value);
+
+    return date.toLocaleString('zh-TW', {
+        month: '2-digit',
+        day: '2-digit',
+        hour: '2-digit',
+        minute: '2-digit',
+    });
+}
+
+async function sendChatMessage(e) {
+    e.preventDefault();
+
+    const input = document.getElementById('chatInput');
+    const btn = document.getElementById('chatSendBtn');
+    const message = input.value.trim();
+
+    if (!message) {
+        input.focus();
+        return;
+    }
+
+    btn.disabled = true;
+    btn.textContent = '送出中...';
+
+    try {
+        await Tasks.sendChat(taskId, { message });
+        input.value = '';
+        await loadChat(true);
+    } catch (err) {
+        showMessage('msg', err.message);
+    } finally {
+        btn.disabled = false;
+        btn.textContent = '送出';
+        input.focus();
     }
 }
 
@@ -679,6 +895,8 @@ document.getElementById('editForm').addEventListener('submit', async (e) => {
         submitBtn.textContent = '儲存修改';
     }
 });
+
+window.addEventListener('beforeunload', stopChatPolling);
 
 init();
 </script>

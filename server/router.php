@@ -20,6 +20,8 @@
  *   POST   /api/tasks/5/complete  → api/tasks/complete.php?id=5
  *   POST   /api/tasks/5/confirm   → api/tasks/confirm.php?id=5
  *   POST   /api/tasks/5/withdraw  → api/tasks/withdraw.php?id=5
+ *   GET    /api/tasks/5/chat      → api/tasks/chat.php?id=5
+ *   POST   /api/tasks/5/chat      → api/tasks/chat.php?id=5
  */
 
 // Parse the request URI
@@ -103,8 +105,8 @@ if ($resource === 'tasks') {
             exit;
         }
 
-        // Action routes (all POST)
-        $actionMap = ['apply', 'assign', 'start', 'complete', 'confirm', 'withdraw', 'review'];
+        // Action routes
+        $actionMap = ['apply', 'assign', 'start', 'complete', 'confirm', 'withdraw', 'review', 'chat'];
         if (in_array($action, $actionMap, true)) {
             require $apiDir . '/tasks/' . $action . '.php';
             exit;
