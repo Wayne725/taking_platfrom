@@ -1,6 +1,7 @@
 <?php
 require_once __DIR__ . '/../../helpers.php';
 require_once __DIR__ . '/../../db.php';
+require_once __DIR__ . '/../../post_helpers.php';
 
 setCorsHeaders();
 startAppSession();
@@ -12,7 +13,7 @@ $db          = getDB();
 // ── GET /api/auth/profile ──────────────────────────────────────────────────────
 if ($method === 'GET') {
     // Full user row
-    $stmt = $db->prepare('SELECT id, username, email, bio, created_at FROM users WHERE id = ? LIMIT 1');
+    $stmt = $db->prepare('SELECT id, username, email, bio, avatar_url, created_at FROM users WHERE id = ? LIMIT 1');
     $stmt->execute([$currentUser['id']]);
     $user = $stmt->fetch();
 
@@ -63,6 +64,8 @@ if ($method === 'GET') {
     }
     unset($rev);
 
+    $posts = fetchUserPosts($db, (int) $currentUser['id']);
+
     successResponse('取得個人資料成功', [
         'user'            => $user,
         'tasks_posted'    => $tasksPosted,
@@ -70,6 +73,7 @@ if ($method === 'GET') {
         'total_income'    => $totalIncome,
         'avg_rating'      => $avgRating,
         'review_count'    => $reviewCount,
+        'posts'           => $posts,
         'reviews'         => $reviews,
     ]);
 }
@@ -82,9 +86,15 @@ elseif ($method === 'PUT') {
     $updateUsername = isset($body['username']);
     $updatePassword = isset($body['current_password']) && isset($body['new_password']);
     $updateBio      = isset($body['bio']);
+    $updateAvatar   = isset($body['avatar_url']);
 
-    if (!$updateUsername && !$updatePassword && !$updateBio) {
+    if (!$updateUsername && !$updatePassword && !$updateBio && !$updateAvatar) {
         errorResponse('請提供要更新的欄位');
+    }
+
+    if ($updateAvatar) {
+        $avatarUrl = normalizeAvatarUrl($body['avatar_url']);
+        $db->prepare('UPDATE users SET avatar_url = ? WHERE id = ?')->execute([$avatarUrl, $currentUser['id']]);
     }
 
     if ($updateBio) {

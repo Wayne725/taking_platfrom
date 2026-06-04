@@ -1,6 +1,7 @@
 <?php
 require_once __DIR__ . '/../../helpers.php';
 require_once __DIR__ . '/../../db.php';
+require_once __DIR__ . '/../../post_helpers.php';
 
 setCorsHeaders();
 startAppSession();
@@ -14,7 +15,7 @@ if ($userId <= 0) errorResponse('無效的使用者 ID', 400);
 
 $db = getDB();
 
-$stmt = $db->prepare('SELECT id, username, bio, created_at FROM users WHERE id = ? LIMIT 1');
+$stmt = $db->prepare('SELECT id, username, bio, avatar_url, created_at FROM users WHERE id = ? LIMIT 1');
 $stmt->execute([$userId]);
 $user = $stmt->fetch();
 
@@ -60,11 +61,14 @@ foreach ($reviews as &$rev) {
 }
 unset($rev);
 
+$posts = fetchUserPosts($db, $userId);
+
 successResponse('取得使用者資料成功', [
     'user'            => $user,
     'tasks_posted'    => $tasksPosted,
     'tasks_completed' => $tasksCompleted,
     'avg_rating'      => $avgRating,
     'review_count'    => $reviewCount,
+    'posts'           => $posts,
     'reviews'         => $reviews,
 ]);

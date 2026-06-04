@@ -58,6 +58,9 @@ const Auth = {
     me:            ()     => request('/auth/me',         { method: 'GET'  }),
     profile:       ()     => request('/auth/profile',   { method: 'GET'  }),
     updateProfile: (data) => request('/auth/profile',   { method: 'PUT',  body: data }),
+    createPost:    (data) => request('/auth/posts',     { method: 'POST', body: data }),
+    updatePost:    (id, data) => request(`/auth/posts?id=${encodeURIComponent(id)}`, { method: 'PUT', body: data }),
+    deletePost:    (id)   => request(`/auth/posts?id=${encodeURIComponent(id)}`, { method: 'DELETE' }),
 };
 
 // ── Tasks ──────────────────────────────────────────────────────────────────────

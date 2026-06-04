@@ -23,7 +23,7 @@
         <!-- Left: Profile card -->
         <div>
             <div class="profile-card" id="profileCard">
-                <div class="profile-avatar" id="profileAvatar"></div>
+                <button type="button" class="profile-avatar" id="profileAvatar" title="放大頭貼"></button>
                 <div class="profile-username" id="profileUsername"></div>
                 <div class="profile-role-badge" id="profileRoleBadge"></div>
 
@@ -38,8 +38,22 @@
         <!-- Right: Forms -->
         <div class="profile-main">
 
+            <!-- Avatar URL -->
+            <div class="profile-section-card owner-only">
+                <div class="profile-section-title">頭貼圖片</div>
+                <div id="avatarMsg" class="message"></div>
+                <form id="avatarForm" novalidate>
+                    <div class="form-group">
+                        <label for="avatarUrlInput">圖片網址</label>
+                        <input type="url" id="avatarUrlInput" class="form-control"
+                               placeholder="https://example.com/avatar.jpg" maxlength="2048">
+                    </div>
+                    <button type="submit" id="avatarSubmitBtn" class="btn btn-primary">儲存頭貼</button>
+                </form>
+            </div>
+
             <!-- Bio -->
-            <div class="profile-section-card">
+            <div class="profile-section-card owner-only">
                 <div class="profile-section-title">個人簡介 / 經歷</div>
                 <div id="bioMsg" class="message"></div>
                 <form id="bioForm" novalidate>
@@ -54,6 +68,36 @@
                 </form>
             </div>
 
+            <!-- Posts -->
+            <div class="profile-section-card">
+                <div class="profile-section-title">貼文</div>
+                <div class="owner-only">
+                    <div id="postMsg" class="message"></div>
+                    <form id="postForm" class="post-form" novalidate>
+                        <div class="form-group">
+                            <textarea id="postContentInput" class="form-control" rows="4"
+                                      placeholder="分享近況、作品或合作想法..." maxlength="1000"></textarea>
+                            <div class="post-form-meta">
+                                <span><span id="postCharCount">0</span> / 1000</span>
+                            </div>
+                        </div>
+                        <div class="post-upload-row">
+                            <label for="postImageInput" class="btn btn-outline btn-sm">選擇圖片</label>
+                            <input type="file" id="postImageInput" accept="image/jpeg,image/png,image/webp" hidden>
+                            <button type="button" id="removePostImageBtn" class="btn btn-outline btn-sm" style="display:none">移除圖片</button>
+                        </div>
+                        <div id="postImagePreview" class="post-image-preview" style="display:none"></div>
+                        <div class="post-form-actions">
+                            <button type="button" id="cancelPostEditBtn" class="btn btn-outline" style="display:none">取消編輯</button>
+                            <button type="submit" id="postSubmitBtn" class="btn btn-primary">發布貼文</button>
+                        </div>
+                    </form>
+                </div>
+                <div id="postsContainer" class="post-list">
+                    <div class="bio-empty">載入中...</div>
+                </div>
+            </div>
+
             <!-- Reviews received -->
             <div class="profile-section-card">
                 <div class="profile-section-title">收到的評價</div>
@@ -63,7 +107,7 @@
             </div>
 
             <!-- Change username -->
-            <div class="profile-section-card">
+            <div class="profile-section-card owner-only">
                 <div class="profile-section-title">修改使用者名稱</div>
                 <div id="usernameMsg" class="message"></div>
                 <form id="usernameForm" novalidate>
@@ -76,7 +120,7 @@
             </div>
 
             <!-- Change password -->
-            <div class="profile-section-card">
+            <div class="profile-section-card owner-only">
                 <div class="profile-section-title">修改密碼</div>
                 <div id="passwordMsg" class="message"></div>
                 <form id="passwordForm" novalidate>
@@ -100,34 +144,60 @@
     </div>
 </div>
 
+<div class="modal-overlay" id="avatarModal">
+    <div class="avatar-modal">
+        <div class="modal-header">
+            <span class="modal-title">頭貼</span>
+            <button class="modal-close" id="closeAvatarModal">&times;</button>
+        </div>
+        <img id="avatarModalImg" alt="放大的頭貼">
+    </div>
+</div>
+
 <script src="js/api.js"></script>
 <script src="js/auth.js"></script>
 <script src="js/utils.js"></script>
 <script>
 let currentUser = null;
 let profileData = null;
+let isOwnProfile = false;
+let selectedPostImageData = null;
+let editingPostId = null;
+const MAX_POST_IMAGE_BYTES = 2097152;
 
 async function init() {
-    currentUser = await fetchCurrentUser();
+    currentUser = await fetchCurrentUser({
+        preferCache: true,
+        backgroundRefresh: true,
+        onRefresh: (freshUser) => {
+            currentUser = freshUser;
+            renderNavBar('nav-container', currentUser);
+        },
+    });
     const params  = new URLSearchParams(window.location.search);
     const viewId  = parseInt(params.get('id'), 10);
-    const isOwn   = !viewId || (currentUser && viewId === currentUser.id);
+    isOwnProfile = !viewId || (currentUser && viewId === currentUser.id);
 
-    if (isOwn && !currentUser) {
+    if (isOwnProfile && !currentUser) {
         window.location.href = 'login.html';
         return;
     }
 
-    if (currentUser) renderNavBar('nav-container', currentUser);
+    renderNavBar('nav-container', currentUser);
+    applyProfileMode();
 
-    if (isOwn) {
+    if (isOwnProfile) {
         await loadProfile();
     } else {
-        // Hide edit forms when viewing someone else
-        document.querySelector('.profile-main').style.display = 'none';
         document.querySelector('.page-header .page-title').textContent = '使用者資料';
         await loadPublicProfile(viewId);
     }
+}
+
+function applyProfileMode() {
+    document.querySelectorAll('.owner-only').forEach((el) => {
+        el.style.display = isOwnProfile ? '' : 'none';
+    });
 }
 
 async function loadPublicProfile(userId) {
@@ -148,6 +218,10 @@ async function loadProfile() {
         renderProfile(profileData);
         document.getElementById('profileLayout').style.display = 'grid';
     } catch (err) {
+        if (err.httpStatus === 401) {
+            window.location.href = 'login.html';
+            return;
+        }
         showMessage('msg', err.message || '載入失敗');
     }
 }
@@ -155,9 +229,7 @@ async function loadProfile() {
 function renderProfile(data) {
     const user = data.user;
 
-    // Avatar (first letter of username)
-    const avatarEl = document.getElementById('profileAvatar');
-    avatarEl.textContent = (user.username || '?')[0].toUpperCase();
+    renderAvatar(user);
 
     document.getElementById('profileUsername').textContent = user.username;
 
@@ -168,10 +240,9 @@ function renderProfile(data) {
     const metaList = document.getElementById('profileMetaList');
     metaList.innerHTML = '';
 
-    const metaItems = [
-        { icon: '@', text: user.email },
-        { icon: '+', text: '加入於 ' + formatDate(user.created_at) },
-    ];
+    const metaItems = [];
+    if (user.email) metaItems.push({ icon: '@', text: user.email });
+    metaItems.push({ icon: '+', text: '加入於 ' + formatDate(user.created_at) });
 
     metaItems.forEach(({ icon, text }) => {
         const row = document.createElement('div');
@@ -214,8 +285,9 @@ function renderProfile(data) {
         statsGrid.appendChild(card);
     });
 
-    // Pre-fill username form
+    // Pre-fill owner forms
     document.getElementById('newUsername').value = user.username;
+    document.getElementById('avatarUrlInput').value = user.avatar_url || '';
 
     // Bio display (in card)
     const bioDiv = document.getElementById('profileBio');
@@ -239,8 +311,99 @@ function renderProfile(data) {
         document.getElementById('bioCharCount').textContent = bioInput.value.length;
     }
 
-    // Reviews
+    // Posts and reviews
+    renderPosts(data.posts || []);
     renderReviews(data.reviews || []);
+}
+
+function renderAvatar(user) {
+    const avatarEl = document.getElementById('profileAvatar');
+    avatarEl.innerHTML = '';
+    avatarEl.classList.toggle('has-image', !!user.avatar_url);
+    avatarEl.dataset.avatarUrl = user.avatar_url || '';
+    avatarEl.disabled = !user.avatar_url;
+
+    if (user.avatar_url) {
+        const img = document.createElement('img');
+        img.src = user.avatar_url;
+        img.alt = `${user.username} 的頭貼`;
+        img.addEventListener('error', () => {
+            avatarEl.innerHTML = '';
+            avatarEl.classList.remove('has-image');
+            avatarEl.dataset.avatarUrl = '';
+            avatarEl.disabled = true;
+            avatarEl.textContent = (user.username || '?')[0].toUpperCase();
+        });
+        avatarEl.appendChild(img);
+    } else {
+        avatarEl.textContent = (user.username || '?')[0].toUpperCase();
+    }
+}
+
+function renderPosts(posts) {
+    const container = document.getElementById('postsContainer');
+    container.innerHTML = '';
+
+    if (posts.length === 0) {
+        const empty = document.createElement('div');
+        empty.className = 'bio-empty';
+        empty.textContent = isOwnProfile ? '尚未發布任何貼文' : '這位使用者尚未發布貼文';
+        container.appendChild(empty);
+        return;
+    }
+
+    posts.forEach((post) => {
+        const card = document.createElement('div');
+        card.className = 'post-card';
+
+        const header = document.createElement('div');
+        header.className = 'post-header';
+
+        const date = document.createElement('div');
+        date.className = 'post-date';
+        date.textContent = formatDate(post.created_at);
+        header.appendChild(date);
+
+        if (isOwnProfile) {
+            const actions = document.createElement('div');
+            actions.className = 'post-actions';
+
+            const editBtn = document.createElement('button');
+            editBtn.type = 'button';
+            editBtn.className = 'btn btn-outline btn-sm';
+            editBtn.textContent = '編輯';
+            editBtn.addEventListener('click', () => startEditPost(post));
+
+            const deleteBtn = document.createElement('button');
+            deleteBtn.type = 'button';
+            deleteBtn.className = 'btn btn-danger btn-sm';
+            deleteBtn.textContent = '刪除';
+            deleteBtn.addEventListener('click', () => deletePost(post.id));
+
+            actions.appendChild(editBtn);
+            actions.appendChild(deleteBtn);
+            header.appendChild(actions);
+        }
+
+        card.appendChild(header);
+
+        if (post.content) {
+            const content = document.createElement('div');
+            content.className = 'post-content';
+            content.textContent = post.content;
+            card.appendChild(content);
+        }
+
+        if (post.image_data) {
+            const img = document.createElement('img');
+            img.className = 'post-image';
+            img.src = post.image_data;
+            img.alt = '貼文圖片';
+            card.appendChild(img);
+        }
+
+        container.appendChild(card);
+    });
 }
 
 function renderReviews(reviews) {
@@ -302,6 +465,174 @@ function renderReviews(reviews) {
     });
     container.appendChild(list);
 }
+
+function setPostImagePreview(imageData) {
+    const preview = document.getElementById('postImagePreview');
+    const removeBtn = document.getElementById('removePostImageBtn');
+    preview.innerHTML = '';
+
+    if (!imageData) {
+        preview.style.display = 'none';
+        removeBtn.style.display = 'none';
+        return;
+    }
+
+    const img = document.createElement('img');
+    img.src = imageData;
+    img.alt = '貼文圖片預覽';
+    preview.appendChild(img);
+    preview.style.display = 'block';
+    removeBtn.style.display = '';
+}
+
+function resetPostForm() {
+    editingPostId = null;
+    selectedPostImageData = null;
+    document.getElementById('postContentInput').value = '';
+    document.getElementById('postImageInput').value = '';
+    document.getElementById('postCharCount').textContent = '0';
+    document.getElementById('postSubmitBtn').textContent = '發布貼文';
+    document.getElementById('cancelPostEditBtn').style.display = 'none';
+    setPostImagePreview(null);
+}
+
+function startEditPost(post) {
+    editingPostId = post.id;
+    selectedPostImageData = post.image_data || null;
+    document.getElementById('postContentInput').value = post.content || '';
+    document.getElementById('postCharCount').textContent = (post.content || '').length;
+    document.getElementById('postSubmitBtn').textContent = '更新貼文';
+    document.getElementById('cancelPostEditBtn').style.display = '';
+    setPostImagePreview(selectedPostImageData);
+    document.getElementById('postContentInput').focus();
+}
+
+async function deletePost(postId) {
+    if (!confirm('確定要刪除此貼文嗎？')) return;
+
+    try {
+        await Auth.deletePost(postId);
+        showMessage('postMsg', '貼文已刪除', 'success');
+        await loadProfile();
+    } catch (err) {
+        showMessage('postMsg', err.message);
+    }
+}
+
+function openAvatarModal() {
+    const url = document.getElementById('profileAvatar').dataset.avatarUrl;
+    if (!url) return;
+
+    document.getElementById('avatarModalImg').src = url;
+    document.getElementById('avatarModal').classList.add('open');
+}
+
+function closeAvatarModal() {
+    document.getElementById('avatarModal').classList.remove('open');
+    document.getElementById('avatarModalImg').src = '';
+}
+
+// ── Avatar modal ──────────────────────────────────────────────────────────────
+document.getElementById('profileAvatar').addEventListener('click', openAvatarModal);
+document.getElementById('closeAvatarModal').addEventListener('click', closeAvatarModal);
+document.getElementById('avatarModal').addEventListener('click', (e) => {
+    if (e.target === document.getElementById('avatarModal')) closeAvatarModal();
+});
+
+// ── Avatar URL ────────────────────────────────────────────────────────────────
+document.getElementById('avatarForm').addEventListener('submit', async (e) => {
+    e.preventDefault();
+    hideMessage('avatarMsg');
+
+    const avatarUrl = document.getElementById('avatarUrlInput').value.trim();
+    const btn = document.getElementById('avatarSubmitBtn');
+    btn.disabled = true;
+    btn.textContent = '儲存中...';
+
+    try {
+        await Auth.updateProfile({ avatar_url: avatarUrl });
+        showMessage('avatarMsg', '頭貼已更新！', 'success');
+        await loadProfile();
+    } catch (err) {
+        showMessage('avatarMsg', err.message);
+    } finally {
+        btn.disabled = false;
+        btn.textContent = '儲存頭貼';
+    }
+});
+
+// ── Post composer ─────────────────────────────────────────────────────────────
+document.getElementById('postContentInput').addEventListener('input', function () {
+    document.getElementById('postCharCount').textContent = this.value.length;
+});
+
+document.getElementById('postImageInput').addEventListener('change', function () {
+    hideMessage('postMsg');
+    const file = this.files && this.files[0];
+    if (!file) return;
+
+    const allowedTypes = ['image/jpeg', 'image/png', 'image/webp'];
+    if (!allowedTypes.includes(file.type)) {
+        showMessage('postMsg', '貼文圖片僅支援 jpeg、png 或 webp');
+        this.value = '';
+        return;
+    }
+
+    if (file.size > MAX_POST_IMAGE_BYTES) {
+        showMessage('postMsg', '貼文圖片不可超過 2MB');
+        this.value = '';
+        return;
+    }
+
+    const reader = new FileReader();
+    reader.onload = () => {
+        selectedPostImageData = String(reader.result || '');
+        setPostImagePreview(selectedPostImageData);
+    };
+    reader.onerror = () => showMessage('postMsg', '圖片讀取失敗');
+    reader.readAsDataURL(file);
+});
+
+document.getElementById('removePostImageBtn').addEventListener('click', () => {
+    selectedPostImageData = null;
+    document.getElementById('postImageInput').value = '';
+    setPostImagePreview(null);
+});
+
+document.getElementById('cancelPostEditBtn').addEventListener('click', resetPostForm);
+
+document.getElementById('postForm').addEventListener('submit', async (e) => {
+    e.preventDefault();
+    hideMessage('postMsg');
+
+    const content = document.getElementById('postContentInput').value.trim();
+    if (!content && !selectedPostImageData) {
+        showMessage('postMsg', '貼文內容或圖片至少需要一項');
+        return;
+    }
+
+    const btn = document.getElementById('postSubmitBtn');
+    btn.disabled = true;
+    btn.textContent = editingPostId ? '更新中...' : '發布中...';
+
+    try {
+        const payload = { content, image_data: selectedPostImageData || '' };
+        if (editingPostId) {
+            await Auth.updatePost(editingPostId, payload);
+            showMessage('postMsg', '貼文已更新！', 'success');
+        } else {
+            await Auth.createPost(payload);
+            showMessage('postMsg', '貼文已發布！', 'success');
+        }
+        resetPostForm();
+        await loadProfile();
+    } catch (err) {
+        showMessage('postMsg', err.message);
+    } finally {
+        btn.disabled = false;
+        btn.textContent = editingPostId ? '更新貼文' : '發布貼文';
+    }
+});
 
 // ── Bio char counter ───────────────────────────────────────────────────────────
 document.getElementById('bioInput').addEventListener('input', function () {
