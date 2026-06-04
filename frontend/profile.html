@@ -38,13 +38,19 @@
         <!-- Right: Forms -->
         <div class="profile-main">
 
-            <!-- Avatar URL -->
+            <!-- Avatar -->
             <div class="profile-section-card owner-only">
                 <div class="profile-section-title">頭貼圖片</div>
                 <div id="avatarMsg" class="message"></div>
                 <form id="avatarForm" novalidate>
+                    <div class="post-upload-row">
+                        <label for="avatarImageInput" class="btn btn-outline btn-sm">從電腦選照片</label>
+                        <input type="file" id="avatarImageInput" accept="image/jpeg,image/png,image/webp" hidden>
+                        <button type="button" id="removeAvatarImageBtn" class="btn btn-outline btn-sm" style="display:none">移除上傳照片</button>
+                    </div>
+                    <div id="avatarImagePreview" class="post-image-preview avatar-image-preview" style="display:none"></div>
                     <div class="form-group">
-                        <label for="avatarUrlInput">圖片網址</label>
+                        <label for="avatarUrlInput">圖片網址（選填備用）</label>
                         <input type="url" id="avatarUrlInput" class="form-control"
                                placeholder="https://example.com/avatar.jpg" maxlength="2048">
                     </div>
@@ -164,6 +170,8 @@ let isOwnProfile = false;
 let selectedPostImageData = null;
 let editingPostId = null;
 const MAX_POST_IMAGE_BYTES = 2097152;
+let selectedAvatarData = null;
+const MAX_AVATAR_IMAGE_BYTES = 2097152;
 
 async function init() {
     currentUser = await fetchCurrentUser({
@@ -288,6 +296,8 @@ function renderProfile(data) {
     // Pre-fill owner forms
     document.getElementById('newUsername').value = user.username;
     document.getElementById('avatarUrlInput').value = user.avatar_url || '';
+    selectedAvatarData = user.avatar_data || null;
+    setAvatarImagePreview(selectedAvatarData);
 
     // Bio display (in card)
     const bioDiv = document.getElementById('profileBio');
@@ -318,19 +328,20 @@ function renderProfile(data) {
 
 function renderAvatar(user) {
     const avatarEl = document.getElementById('profileAvatar');
+    const avatarSrc = user.avatar_data || user.avatar_url || '';
     avatarEl.innerHTML = '';
-    avatarEl.classList.toggle('has-image', !!user.avatar_url);
-    avatarEl.dataset.avatarUrl = user.avatar_url || '';
-    avatarEl.disabled = !user.avatar_url;
+    avatarEl.classList.toggle('has-image', !!avatarSrc);
+    avatarEl.dataset.avatarSrc = avatarSrc;
+    avatarEl.disabled = !avatarSrc;
 
-    if (user.avatar_url) {
+    if (avatarSrc) {
         const img = document.createElement('img');
-        img.src = user.avatar_url;
+        img.src = avatarSrc;
         img.alt = `${user.username} 的頭貼`;
         img.addEventListener('error', () => {
             avatarEl.innerHTML = '';
             avatarEl.classList.remove('has-image');
-            avatarEl.dataset.avatarUrl = '';
+            avatarEl.dataset.avatarSrc = '';
             avatarEl.disabled = true;
             avatarEl.textContent = (user.username || '?')[0].toUpperCase();
         });
@@ -485,6 +496,25 @@ function setPostImagePreview(imageData) {
     removeBtn.style.display = '';
 }
 
+function setAvatarImagePreview(imageData) {
+    const preview = document.getElementById('avatarImagePreview');
+    const removeBtn = document.getElementById('removeAvatarImageBtn');
+    preview.innerHTML = '';
+
+    if (!imageData) {
+        preview.style.display = 'none';
+        removeBtn.style.display = 'none';
+        return;
+    }
+
+    const img = document.createElement('img');
+    img.src = imageData;
+    img.alt = '頭貼預覽';
+    preview.appendChild(img);
+    preview.style.display = 'block';
+    removeBtn.style.display = '';
+}
+
 function resetPostForm() {
     editingPostId = null;
     selectedPostImageData = null;
@@ -520,10 +550,10 @@ async function deletePost(postId) {
 }
 
 function openAvatarModal() {
-    const url = document.getElementById('profileAvatar').dataset.avatarUrl;
-    if (!url) return;
+    const src = document.getElementById('profileAvatar').dataset.avatarSrc;
+    if (!src) return;
 
-    document.getElementById('avatarModalImg').src = url;
+    document.getElementById('avatarModalImg').src = src;
     document.getElementById('avatarModal').classList.add('open');
 }
 
@@ -539,7 +569,40 @@ document.getElementById('avatarModal').addEventListener('click', (e) => {
     if (e.target === document.getElementById('avatarModal')) closeAvatarModal();
 });
 
-// ── Avatar URL ────────────────────────────────────────────────────────────────
+// ── Avatar ────────────────────────────────────────────────────────────────────
+document.getElementById('avatarImageInput').addEventListener('change', function () {
+    hideMessage('avatarMsg');
+    const file = this.files && this.files[0];
+    if (!file) return;
+
+    const allowedTypes = ['image/jpeg', 'image/png', 'image/webp'];
+    if (!allowedTypes.includes(file.type)) {
+        showMessage('avatarMsg', '頭貼圖片僅支援 jpeg、png 或 webp');
+        this.value = '';
+        return;
+    }
+
+    if (file.size > MAX_AVATAR_IMAGE_BYTES) {
+        showMessage('avatarMsg', '頭貼圖片不可超過 2MB');
+        this.value = '';
+        return;
+    }
+
+    const reader = new FileReader();
+    reader.onload = () => {
+        selectedAvatarData = String(reader.result || '');
+        setAvatarImagePreview(selectedAvatarData);
+    };
+    reader.onerror = () => showMessage('avatarMsg', '頭貼圖片讀取失敗');
+    reader.readAsDataURL(file);
+});
+
+document.getElementById('removeAvatarImageBtn').addEventListener('click', () => {
+    selectedAvatarData = null;
+    document.getElementById('avatarImageInput').value = '';
+    setAvatarImagePreview(null);
+});
+
 document.getElementById('avatarForm').addEventListener('submit', async (e) => {
     e.preventDefault();
     hideMessage('avatarMsg');
@@ -550,7 +613,7 @@ document.getElementById('avatarForm').addEventListener('submit', async (e) => {
     btn.textContent = '儲存中...';
 
     try {
-        await Auth.updateProfile({ avatar_url: avatarUrl });
+        await Auth.updateProfile({ avatar_url: avatarUrl, avatar_data: selectedAvatarData || '' });
         showMessage('avatarMsg', '頭貼已更新！', 'success');
         await loadProfile();
     } catch (err) {

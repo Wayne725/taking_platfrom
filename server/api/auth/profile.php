@@ -13,7 +13,7 @@ $db          = getDB();
 // ── GET /api/auth/profile ──────────────────────────────────────────────────────
 if ($method === 'GET') {
     // Full user row
-    $stmt = $db->prepare('SELECT id, username, email, bio, avatar_url, created_at FROM users WHERE id = ? LIMIT 1');
+    $stmt = $db->prepare('SELECT id, username, email, bio, avatar_url, avatar_data, created_at FROM users WHERE id = ? LIMIT 1');
     $stmt->execute([$currentUser['id']]);
     $user = $stmt->fetch();
 
@@ -87,9 +87,15 @@ elseif ($method === 'PUT') {
     $updatePassword = isset($body['current_password']) && isset($body['new_password']);
     $updateBio      = isset($body['bio']);
     $updateAvatar   = isset($body['avatar_url']);
+    $updateAvatarData = array_key_exists('avatar_data', $body);
 
-    if (!$updateUsername && !$updatePassword && !$updateBio && !$updateAvatar) {
+    if (!$updateUsername && !$updatePassword && !$updateBio && !$updateAvatar && !$updateAvatarData) {
         errorResponse('請提供要更新的欄位');
+    }
+
+    if ($updateAvatarData) {
+        $avatarData = validateAvatarImageData($body['avatar_data']);
+        $db->prepare('UPDATE users SET avatar_data = ? WHERE id = ?')->execute([$avatarData, $currentUser['id']]);
     }
 
     if ($updateAvatar) {

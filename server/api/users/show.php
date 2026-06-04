@@ -15,7 +15,7 @@ if ($userId <= 0) errorResponse('無效的使用者 ID', 400);
 
 $db = getDB();
 
-$stmt = $db->prepare('SELECT id, username, bio, avatar_url, created_at FROM users WHERE id = ? LIMIT 1');
+$stmt = $db->prepare('SELECT id, username, bio, avatar_url, avatar_data, created_at FROM users WHERE id = ? LIMIT 1');
 $stmt->execute([$userId]);
 $user = $stmt->fetch();
 

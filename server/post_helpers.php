@@ -2,6 +2,7 @@
 
 const MAX_POST_CONTENT_LEN = 1000;
 const MAX_POST_IMAGE_BYTES = 2097152; // 2MB
+const MAX_AVATAR_IMAGE_BYTES = 2097152; // 2MB
 
 function normalizeAvatarUrl(mixed $value): ?string {
     $url = trim((string) ($value ?? ''));
@@ -23,6 +24,28 @@ function normalizeAvatarUrl(mixed $value): ?string {
     }
 
     return $url;
+}
+
+function validateAvatarImageData(mixed $value): ?string {
+    $imageData = trim((string) ($value ?? ''));
+    if ($imageData === '') {
+        return null;
+    }
+
+    if (!preg_match('/^data:image\/(jpeg|png|webp);base64,([a-zA-Z0-9+\/=\r\n]+)$/', $imageData, $matches)) {
+        errorResponse('頭貼圖片僅支援 jpeg、png 或 webp');
+    }
+
+    $decoded = base64_decode($matches[2], true);
+    if ($decoded === false) {
+        errorResponse('頭貼圖片格式錯誤');
+    }
+
+    if (strlen($decoded) > MAX_AVATAR_IMAGE_BYTES) {
+        errorResponse('頭貼圖片不可超過 2MB');
+    }
+
+    return $imageData;
 }
 
 function validatePostInput(array $body): array {

@@ -1050,6 +1050,14 @@ textarea.chat-input {
     margin: 0 auto;
 }
 
+.avatar-image-preview img {
+    width: 160px;
+    height: 160px;
+    max-height: none;
+    object-fit: cover;
+    border-radius: 50%;
+}
+
 .post-list {
     display: flex;
     flex-direction: column;

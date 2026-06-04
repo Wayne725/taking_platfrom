@@ -13,6 +13,7 @@ CREATE TABLE IF NOT EXISTS users (
     role ENUM('client', 'worker') NOT NULL DEFAULT 'worker', -- deprecated, no longer used
     bio  TEXT NULL,
     avatar_url VARCHAR(2048) NULL,
+    avatar_data LONGTEXT NULL,
     created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
     updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
     INDEX idx_email (email),
